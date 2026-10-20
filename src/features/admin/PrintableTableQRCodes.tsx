@@ -124,7 +124,7 @@ export function PrintableTableQRCodes({ restaurant, tables }: PrintableTableQRCo
                   </span>
                 )}
                 <p className="text-[11px] text-slate-700 mt-1.5 max-w-[210px] leading-tight">
-                  Escaneie para acessar o cardápio e fazer seu pedido.
+                  Aponte a câmera do celular para fazer seu pedido
                 </p>
                 <span className="text-[9px] uppercase tracking-wider text-slate-400 mt-2 font-mono">
                   Elozi · Conecte sua Mesa
@@ -416,7 +416,7 @@ export function BatchPrintPreviewModal({
                       </span>
                     )}
                     <p className="text-[10px] text-slate-500 mt-1 max-w-[190px] leading-tight">
-                      Escaneie para acessar o cardápio e fazer seu pedido.
+                      Aponte a câmera do celular para fazer seu pedido
                     </p>
                   </div>
                 </div>

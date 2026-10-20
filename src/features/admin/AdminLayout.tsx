@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Link,
   NavLink,
   Outlet,
+  useLocation,
   useNavigate,
   useOutletContext,
 } from "react-router";
@@ -10,6 +11,7 @@ import { useRestaurant } from "../restaurants/RestaurantProvider";
 import { signOutStaff, type StaffAccess } from "../auth/staffAuth";
 import { ThemeToggleButton } from "../theme/ThemeToggleButton";
 import { AdminTopbar } from "./AdminTopbar";
+import { getPlatformAccess } from "../platform/platformRestaurants";
 
 export function AdminLayout() {
   const access = useOutletContext<StaffAccess>();
@@ -17,6 +19,23 @@ export function AdminLayout() {
   const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const location = useLocation();
+  const [isPlatformAdmin, setIsPlatformAdmin] = useState(false);
+
+  useEffect(() => {
+    void getPlatformAccess().then(setIsPlatformAdmin).catch(() => setIsPlatformAdmin(false));
+  }, []);
+
+  let diffDays: number | null = null;
+  if (r.subscriptionExpiresAt) {
+    const diffMs = new Date(r.subscriptionExpiresAt).getTime() - Date.now();
+    diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+  }
+
+  const isExpiringSoon = diffDays !== null && diffDays > 0 && diffDays <= 5;
+  const isGracePeriod = (diffDays !== null && diffDays <= 0 && diffDays >= -3) || r.billingStatus === 'grace_period';
+  const isSevereOverdue = !isPlatformAdmin && ((diffDays !== null && diffDays < -3) || (r.billingStatus === 'expired' && (diffDays === null || diffDays <= -3)));
+  const isBillingTab = location.pathname.endsWith('/assinatura');
   const links = [
     ["", "Visão geral", "home"],
     ["catalogo", "Cardápio", "menu"],
@@ -135,12 +154,12 @@ export function AdminLayout() {
       </aside>
       <div className="admin-workspace print:p-0 print:m-0 print:w-full print:block print:bg-white">
         <AdminTopbar restaurant={r} />
-        {r.billingStatus === 'grace_period' && (
+        {isExpiringSoon && !isGracePeriod && !isSevereOverdue && (
           <div
             role="alert"
             className="print:hidden"
             style={{
-              padding: "12px 20px",
+              padding: "10px 20px",
               background: "rgba(245, 158, 11, 0.12)",
               borderBottom: "1px solid rgba(245, 158, 11, 0.35)",
               color: "#b45309",
@@ -148,25 +167,43 @@ export function AdminLayout() {
               fontWeight: 500,
               display: "flex",
               alignItems: "center",
-              gap: "8px",
+              justifyContent: "space-between",
+              gap: "12px",
             }}
           >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <circle cx="12" cy="12" r="10" />
-              <line x1="12" y1="8" x2="12" y2="12" />
-              <line x1="12" y1="16" x2="12.01" y2="16" />
-            </svg>
-            <span>
-              <strong>Atenção:</strong> A assinatura deste estabelecimento expirou. Regularize o pagamento para evitar o bloqueio automático dos pedidos.
-            </span>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="8" x2="12" y2="12" />
+                <line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
+              <span>
+                <strong>Renovação de Assinatura:</strong> Restam apenas {diffDays} {diffDays === 1 ? 'dia' : 'dias'} para o término do seu plano.
+              </span>
+            </div>
+            <Link
+              to={`/${r.slug}/admin/assinatura`}
+              style={{
+                background: "#d97706",
+                color: "#ffffff",
+                padding: "4px 12px",
+                borderRadius: "6px",
+                fontSize: "12px",
+                fontWeight: 600,
+                textDecoration: "none",
+                whiteSpace: "nowrap",
+              }}
+            >
+              Renovar Plano
+            </Link>
           </div>
         )}
-        {r.billingStatus === 'expired' && (
+        {isGracePeriod && !isSevereOverdue && (
           <div
             role="alert"
             className="print:hidden"
             style={{
-              padding: "12px 20px",
+              padding: "10px 20px",
               background: "rgba(239, 68, 68, 0.12)",
               borderBottom: "1px solid rgba(239, 68, 68, 0.35)",
               color: "#b91c1c",
@@ -174,21 +211,78 @@ export function AdminLayout() {
               fontWeight: 500,
               display: "flex",
               alignItems: "center",
-              gap: "8px",
+              justifyContent: "space-between",
+              gap: "12px",
             }}
           >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <circle cx="12" cy="12" r="10" />
-              <line x1="15" y1="9" x2="9" y2="15" />
-              <line x1="9" y1="9" x2="15" y2="15" />
-            </svg>
-            <span>
-              <strong>Atenção:</strong> A assinatura deste estabelecimento está suspensa por expiração do ciclo. Novos atendimentos estão bloqueados.
-            </span>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+                <line x1="12" y1="9" x2="12" y2="13" />
+                <line x1="12" y1="17" x2="12.01" y2="17" />
+              </svg>
+              <span>
+                <strong>Atenção (Período de Tolerância):</strong> Sua assinatura venceu. O sistema será bloqueado em breve se não for regularizado.
+              </span>
+            </div>
+            <Link
+              to={`/${r.slug}/admin/assinatura`}
+              style={{
+                background: "#dc2626",
+                color: "#ffffff",
+                padding: "4px 12px",
+                borderRadius: "6px",
+                fontSize: "12px",
+                fontWeight: 600,
+                textDecoration: "none",
+                whiteSpace: "nowrap",
+              }}
+            >
+              Regularizar Agora
+            </Link>
           </div>
         )}
         <main id="admin-content" className="print:p-0 print:m-0 print:w-full print:block">
-          <Outlet context={access} />
+          {isSevereOverdue && !isBillingTab ? (
+            <div
+              className="p-8 max-w-xl mx-auto my-12 text-center rounded-2xl border"
+              style={{
+                background: "var(--admin-card-bg, #ffffff)",
+                borderColor: "var(--admin-border, #e7e5e4)",
+                boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.05)",
+              }}
+            >
+              <div
+                className="w-16 h-16 mx-auto mb-4 rounded-full flex items-center justify-center"
+                style={{ background: "rgba(239, 68, 68, 0.1)", color: "#dc2626" }}
+              >
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <rect width="18" height="11" x="3" y="11" rx="2" ry="2" />
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                </svg>
+              </div>
+              <h2 className="text-xl font-bold mb-2" style={{ color: "var(--admin-text, #1c1917)" }}>
+                Acesso Administrativo Suspenso
+              </h2>
+              <p className="text-sm mb-6 leading-relaxed" style={{ color: "var(--admin-muted, #78716c)" }}>
+                O período de tolerância de 3 dias expirou e a assinatura deste restaurante está suspensa.
+                Para restabelecer imediatamente as operações de salão, comandas e visualização da cozinha, efetue o pagamento da fatura em aberto.
+              </p>
+              <Link
+                to={`/${r.slug}/admin/assinatura`}
+                className="inline-flex items-center gap-2 px-6 py-3 rounded-xl font-semibold text-white shadow-sm transition-opacity hover:opacity-95"
+                style={{ background: "var(--brand-primary, #b91c1c)" }}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <rect width="20" height="14" x="2" y="5" rx="2" />
+                  <line x1="2" y1="10" x2="22" y2="10" />
+                </svg>
+                <span>Acessar Faturamento & Pagar</span>
+              </Link>
+            </div>
+          ) : (
+            <Outlet context={access} />
+          )}
         </main>
       </div>
     </div>

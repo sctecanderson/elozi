@@ -13,6 +13,7 @@ import {
 import { KdsItemCard } from './KdsItemCard';
 import { isSoundEnabled, playKdsNewOrderSound } from '../../lib/soundAlerts';
 import { SoundSettingsControl } from '../alerts/SoundSettingsControl';
+import { useScreenWakeLock } from '../../lib/useScreenWakeLock';
 
 export function KdsPage() {
   const { restaurantSlug: paramSlug } = useParams<{ restaurantSlug: string }>();
@@ -27,6 +28,7 @@ export function KdsPage() {
   const [mutatingItemId, setMutatingItemId] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(() => new Date());
   const [soundActive, setSoundActive] = useState(() => isSoundEnabled());
+  const { isWakeLockActive, isSupported: isWakeLockSupported } = useScreenWakeLock(true);
 
   const isMountedRef = useRef(true);
 
@@ -407,6 +409,24 @@ export function KdsPage() {
               {connectionStatus === 'SUBSCRIBED' ? 'Ao vivo' : connectionStatus === 'CONNECTING' ? 'Conectando…' : 'Reconectando…'}
             </span>
           </div>
+
+          {isWakeLockSupported && (
+            <div
+              className={`flex items-center gap-1.5 rounded-xl border px-2.5 py-1 text-xs font-semibold transition-colors ${
+                isWakeLockActive
+                  ? 'border-emerald-500/30 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-950/40 dark:text-emerald-300'
+                  : 'border-slate-200 bg-slate-50 text-slate-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400'
+              }`}
+              title={isWakeLockActive ? 'Tela ativa: Wake Lock ativado para impedir que a tela apague' : 'Wake Lock inativo'}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" className="h-3.5 w-3.5" aria-hidden="true">
+                <rect width="20" height="14" x="2" y="3" rx="2" />
+                <line x1="8" x2="16" y1="21" y2="21" />
+                <line x1="12" x2="12" y1="17" y2="21" />
+              </svg>
+              <span className="hidden text-[11px] lg:inline">{isWakeLockActive ? 'Tela ativa' : 'Tela normal'}</span>
+            </div>
+          )}
 
           <SoundSettingsControl showLabels />
 

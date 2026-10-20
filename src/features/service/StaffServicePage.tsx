@@ -29,6 +29,7 @@ import {
   playLowStockSound,
 } from '../../lib/soundAlerts';
 import { SoundSettingsControl } from '../alerts/SoundSettingsControl';
+import { useScreenWakeLock } from '../../lib/useScreenWakeLock';
 
 function getStaffAlertMeta(alert: RestaurantAlert, restaurantSlug: string) {
   let color = '#2563eb';
@@ -89,6 +90,7 @@ function StaffSalonManager({
 }) {
     const submitting = useRef(false);
     const salonInitialLoaded = useRef(false);
+    useScreenWakeLock(true);
 
     // Estado das mesas cadastradas e de todos os atendimentos abertos no salão
     const [allTables, setAllTables] = useState<RestaurantTableItem[]>([]);
@@ -632,7 +634,7 @@ function StaffSalonManager({
                     {isOtherStaffVisit && (
                         <div className="mt-4 rounded-2xl bg-[#fffbeb] dark:bg-amber-950/40 p-4 border border-[#fef3c7] dark:border-amber-900/50 text-center">
                             <div className="text-amber-800 dark:text-amber-300 text-xs font-semibold mb-1">
-                                ⚠️ Mesa ocupada
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="inline-block mr-1.5"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>Mesa ocupada
                             </div>
                             <p className="text-xs text-amber-700 dark:text-amber-200 font-medium">
                                 Esta mesa já está sendo atendida por outro membro da equipe. Apenas o responsável pode confirmar clientes, administrar comandas ou encerrar o atendimento.
@@ -670,7 +672,7 @@ function StaffSalonManager({
                                 {openTabsCount > 0 ? (
                                     <div className="rounded-2xl bg-amber-50 p-3.5 border border-amber-200 text-xs text-amber-900 mb-2">
                                         <p className="font-semibold mb-1">
-                                            ⚠️ {openTabsCount} comanda(s) aberta(s) nesta mesa.
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="inline-block mr-1.5"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>{openTabsCount} comanda(s) aberta(s) nesta mesa.
                                         </p>
                                         <p className="text-amber-800">
                                             Encerre todas as comandas antes de finalizar o atendimento da mesa.
