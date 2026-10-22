@@ -47,6 +47,16 @@ const ResetPasswordPage = lazy(() =>
     default: m.ResetPasswordPage,
   })),
 );
+const PublicOnboardingPage = lazy(() =>
+  import("../features/onboarding/PublicOnboardingPage").then((m) => ({
+    default: m.PublicOnboardingPage,
+  })),
+);
+const FinancialReportPage = lazy(() =>
+  import("../features/admin/FinancialReportPage").then((m) => ({
+    default: m.FinancialReportPage,
+  })),
+);
 const AccessPage = lazy(() =>
   import("../features/auth/AccessPage").then((m) => ({
     default: m.AccessPage,
@@ -224,8 +234,7 @@ function RestaurantLayout() {
         <Suspense
           fallback={
             <p className="shell py-8" role="status">
-              Carregando administração…
-            </p>
+              Carregando administração…</p>
           }
         >
           <Outlet />
@@ -313,8 +322,7 @@ function RestaurantLayout() {
             fallback={
               <div className="py-6 text-center">
                 <p role="status" className="text-xs text-[var(--ink)] opacity-60">
-                  {isEquipe ? 'Carregando equipe…' : 'Carregando…'}
-                </p>
+                  {isEquipe ? 'Carregando equipe…' : 'Carregando…'}</p>
               </div>
             }
           >
@@ -355,8 +363,31 @@ function Start() {
       <h1>Bem-vindo</h1>
       <p>
         Acesse o endereço ou escaneie o QR Code do seu restaurante para
-        consultar o cardápio.
-      </p>
+        consultar o cardápio.</p>
+      <div className="mt-6">
+        <Link
+          to="/criar-conta"
+          className="inline-flex items-center gap-2 px-5 py-3 rounded-xl font-bold text-sm text-white shadow-sm transition-opacity hover:opacity-95"
+          style={{ background: "#2B1D17" }}
+        >
+          <span>Testar Grátis por 7 Dias — Criar Meu Restaurante</span>
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.75"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <line x1="5" y1="12" x2="19" y2="12" />
+            <polyline points="12 5 19 12 12 19" />
+          </svg>
+        </Link>
+      </div>
+
     </main>
   );
 }
@@ -366,6 +397,7 @@ export function App() {
       <Route path="/" element={<Start />} />
       <Route path="convite" element={<Suspense fallback={<p role="status" className="shell py-8">Carregando convite…</p>}><StaffInvitationPage /></Suspense>} />
       <Route path="redefinir-senha" element={<Suspense fallback={<p role="status" className="shell py-8">Carregando…</p>}><ResetPasswordPage /></Suspense>} />
+      <Route path="criar-conta" element={<Suspense fallback={<p role="status" className="shell py-8">Carregando cadastro…</p>}><PublicOnboardingPage /></Suspense>} />
       <Route
         path="plataforma"
         element={
@@ -420,6 +452,7 @@ export function App() {
               <Route path="estoque" element={<InventoryPage />} />
               <Route path="comentarios" element={<AdminCommentsPage />} />
               <Route path="assinatura" element={<SubscriptionBillingPage />} />
+              <Route path="financeiro" element={<FinancialReportPage />} />
               <Route path="identidade" element={<IdentityPage />} />
               <Route path="mesas" element={<TablesPage />} />
               <Route path="midias" element={<MediaMaintenancePage />} />

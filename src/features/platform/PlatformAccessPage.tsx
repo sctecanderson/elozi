@@ -324,8 +324,16 @@ export function PlatformAccessPage() {
           to="/"
           className="mt-6 inline-flex min-h-11 items-center text-sm underline"
         >
-          Voltar ao início
-        </Link>
+          Voltar ao início</Link>
+        <div className="mt-4 pt-4 border-t border-stone-200">
+          <Link
+            to="/criar-conta"
+            className="inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-bold text-white shadow-sm transition-opacity hover:opacity-95"
+            style={{ background: '#2B1D17' }}
+          >
+            <span>Testar Grátis por 7 Dias — Criar Meu Restaurante</span></Link>
+        </div>
+
       </section>
     </main>
   );

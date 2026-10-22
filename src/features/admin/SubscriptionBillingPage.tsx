@@ -1,6 +1,7 @@
 import { useEffect, useState, useTransition } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { supabase } from '../../lib/supabase';
+import { TermsOfUseModal } from '../../components/TermsOfUseModal';
 import { useRestaurant } from '../restaurants/RestaurantProvider';
 import {
   fetchBillingSummary,
@@ -85,6 +86,7 @@ export function SubscriptionBillingPage() {
   const [cardCvv, setCardCvv] = useState('');
   const [saveCard, setSaveCard] = useState(true);
   const [selectedSavedCardId, setSelectedSavedCardId] = useState<string>('new');
+  const [termsModalOpen, setTermsModalOpen] = useState<boolean>(false);
 
   const loadData = async () => {
     try {
@@ -495,9 +497,9 @@ export function SubscriptionBillingPage() {
               onClick={() => handleOpenCheckout(currentRest.subscription_plan, currentRest.billing_cycle_days > 100 ? 'yearly' : 'monthly')}
               className="admin-button primary"
               style={{
-                background: '#dc2626',
+                background: 'var(--admin-primary-btn, #2B1D17)',
                 color: '#ffffff',
-                border: '1px solid #dc2626',
+                border: '1px solid var(--admin-primary-btn, #2B1D17)',
                 padding: '10px 20px',
                 borderRadius: '10px',
                 fontWeight: 700,
@@ -613,7 +615,7 @@ export function SubscriptionBillingPage() {
                 fontWeight: 700,
                 cursor: 'pointer',
                 background: cycle === 'monthly' ? 'var(--color-surface, #ffffff)' : 'transparent',
-                color: cycle === 'monthly' ? '#dc2626' : 'var(--color-text-muted)',
+                color: cycle === 'monthly' ? 'var(--admin-primary-btn, #2B1D17)' : 'var(--color-text-muted)',
                 boxShadow: cycle === 'monthly' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
               }}
             >
@@ -630,7 +632,7 @@ export function SubscriptionBillingPage() {
                 fontWeight: 700,
                 cursor: 'pointer',
                 background: cycle === 'yearly' ? 'var(--color-surface, #ffffff)' : 'transparent',
-                color: cycle === 'yearly' ? '#dc2626' : 'var(--color-text-muted)',
+                color: cycle === 'yearly' ? 'var(--admin-primary-btn, #2B1D17)' : 'var(--color-text-muted)',
                 boxShadow: cycle === 'yearly' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -669,7 +671,7 @@ export function SubscriptionBillingPage() {
                 key={planId}
                 style={{
                   background: 'var(--color-surface, #ffffff)',
-                  border: isFeatured ? '2px solid #dc2626' : '1px solid var(--color-border, #e2e8f0)',
+                  border: isFeatured ? '2px solid var(--admin-primary-btn, #2B1D17)' : '1px solid var(--color-border, #e2e8f0)',
                   borderRadius: '18px',
                   padding: '28px',
                   display: 'flex',
@@ -685,7 +687,7 @@ export function SubscriptionBillingPage() {
                       top: '-12px',
                       left: '50%',
                       transform: 'translateX(-50%)',
-                      background: '#dc2626',
+                      background: 'var(--admin-primary-btn, #2B1D17)',
                       color: '#ffffff',
                       padding: '3px 12px',
                       borderRadius: '12px',
@@ -745,9 +747,9 @@ export function SubscriptionBillingPage() {
                     fontWeight: 700,
                     cursor: 'pointer',
                     transition: 'all 0.15s ease',
-                    background: isCurrent ? 'var(--color-bg-subtle, #f1f5f9)' : '#dc2626',
+                    background: isCurrent ? 'var(--color-bg-subtle, #f1f5f9)' : 'var(--admin-primary-btn, #2B1D17)',
                     color: isCurrent ? 'var(--color-text-main)' : '#ffffff',
-                    border: isCurrent ? '1px solid var(--color-border, #cbd5e1)' : '1px solid #dc2626',
+                    border: isCurrent ? '1px solid var(--color-border, #cbd5e1)' : '1px solid var(--admin-primary-btn, #2B1D17)',
                   }}
                 >
                   {isCurrent ? 'Plano Atual (Renovar)' : 'Selecionar Plano'}
@@ -1037,7 +1039,7 @@ export function SubscriptionBillingPage() {
                   type="button"
                   onClick={handleCloseCheckout}
                   style={{
-                    background: '#dc2626',
+                    background: 'var(--admin-primary-btn, #2B1D17)',
                     color: '#ffffff',
                     border: 'none',
                     padding: '12px 28px',
@@ -1155,9 +1157,9 @@ export function SubscriptionBillingPage() {
                       flex: 1,
                       padding: '10px 8px',
                       border: 'none',
-                      borderBottom: activeTab === 'pix' ? '3px solid #dc2626' : '3px solid transparent',
+                      borderBottom: activeTab === 'pix' ? '3px solid var(--admin-primary-btn, #2B1D17)' : '3px solid transparent',
                       background: 'transparent',
-                      color: activeTab === 'pix' ? '#dc2626' : 'var(--color-text-muted)',
+                      color: activeTab === 'pix' ? 'var(--admin-primary-btn, #2B1D17)' : 'var(--color-text-muted)',
                       fontWeight: activeTab === 'pix' ? 700 : 500,
                       cursor: 'pointer',
                       display: 'flex',
@@ -1181,9 +1183,9 @@ export function SubscriptionBillingPage() {
                       flex: 1,
                       padding: '10px 8px',
                       border: 'none',
-                      borderBottom: activeTab === 'credit_card' ? '3px solid #dc2626' : '3px solid transparent',
+                      borderBottom: activeTab === 'credit_card' ? '3px solid var(--admin-primary-btn, #2B1D17)' : '3px solid transparent',
                       background: 'transparent',
-                      color: activeTab === 'credit_card' ? '#dc2626' : 'var(--color-text-muted)',
+                      color: activeTab === 'credit_card' ? 'var(--admin-primary-btn, #2B1D17)' : 'var(--color-text-muted)',
                       fontWeight: activeTab === 'credit_card' ? 700 : 500,
                       cursor: 'pointer',
                       display: 'flex',
@@ -1207,9 +1209,9 @@ export function SubscriptionBillingPage() {
                       flex: 1,
                       padding: '10px 8px',
                       border: 'none',
-                      borderBottom: activeTab === 'debit_card' ? '3px solid #dc2626' : '3px solid transparent',
+                      borderBottom: activeTab === 'debit_card' ? '3px solid var(--admin-primary-btn, #2B1D17)' : '3px solid transparent',
                       background: 'transparent',
-                      color: activeTab === 'debit_card' ? '#dc2626' : 'var(--color-text-muted)',
+                      color: activeTab === 'debit_card' ? 'var(--admin-primary-btn, #2B1D17)' : 'var(--color-text-muted)',
                       fontWeight: activeTab === 'debit_card' ? 700 : 500,
                       cursor: 'pointer',
                       display: 'flex',
@@ -1267,7 +1269,7 @@ export function SubscriptionBillingPage() {
                       disabled={checkoutBusy}
                       onClick={() => void handleProcessPix()}
                       style={{
-                        background: '#dc2626',
+                        background: 'var(--admin-primary-btn, #2B1D17)',
                         color: '#ffffff',
                         border: 'none',
                         padding: '14px',
@@ -1489,7 +1491,7 @@ export function SubscriptionBillingPage() {
                       disabled={checkoutBusy}
                       onClick={() => void handleProcessCardPayment(activeTab as 'credit_card' | 'debit_card')}
                       style={{
-                        background: '#dc2626',
+                        background: 'var(--admin-primary-btn, #2B1D17)',
                         color: '#ffffff',
                         border: 'none',
                         padding: '14px',
@@ -1509,6 +1511,44 @@ export function SubscriptionBillingPage() {
           </div>
         </div>
       )}
+
+      {/* Rodapé de Termos de Uso e Isenção de Responsabilidade Fiscal */}
+      <div
+        style={{
+          marginTop: '32px',
+          paddingTop: '20px',
+          borderTop: '1px solid var(--admin-border, #e7e5e4)',
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '12px',
+          fontSize: '12.5px',
+          color: 'var(--admin-muted, #57534e)',
+        }}
+      >
+        <span>
+          Plataforma Elozi SaaS — Sistema de gestão operacional de pedidos, comandas e atendimento em mesa (sem emissão fiscal direta).
+        </span>
+        <button
+          type="button"
+          onClick={() => setTermsModalOpen(true)}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            padding: 0,
+            color: 'var(--admin-text, #2B1D17)',
+            fontWeight: 700,
+            textDecoration: 'underline',
+            cursor: 'pointer',
+            fontSize: '12.5px',
+          }}
+        >
+          Termos de Uso e Responsabilidade Fiscal
+        </button>
+      </div>
+
+      <TermsOfUseModal open={termsModalOpen} onClose={() => setTermsModalOpen(false)} />
     </div>
   );
 }

@@ -428,7 +428,7 @@ export function AdminCommentsPage() {
             fontSize: '14px',
             border: 'none',
             cursor: 'pointer',
-            background: activeTab === 'comments' ? '#dc2626' : 'var(--color-bg-subtle, #f3ede6)',
+            background: activeTab === 'comments' ? 'var(--admin-primary-btn, #2B1D17)' : 'var(--color-bg-subtle, #f3ede6)',
             color: activeTab === 'comments' ? '#fff' : 'var(--color-text-main, #4a3f35)',
             transition: 'background 0.2s',
           }}
@@ -447,7 +447,7 @@ export function AdminCommentsPage() {
             fontSize: '14px',
             border: 'none',
             cursor: 'pointer',
-            background: activeTab === 'restricted-terms' ? '#dc2626' : 'var(--color-bg-subtle, #f3ede6)',
+            background: activeTab === 'restricted-terms' ? 'var(--admin-primary-btn, #2B1D17)' : 'var(--color-bg-subtle, #f3ede6)',
             color: activeTab === 'restricted-terms' ? '#fff' : 'var(--color-text-main, #4a3f35)',
             transition: 'background 0.2s',
           }}
