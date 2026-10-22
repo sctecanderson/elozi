@@ -14,6 +14,7 @@ interface TableTabsPanelProps {
   restaurantSlug: string;
   restaurantId: string;
   tableVisitId: string;
+  tableNumber?: number | string;
   onOpenTabsCountChange?: (count: number) => void;
 }
 
@@ -35,6 +36,7 @@ function TableTabsContent({
   restaurantSlug,
   restaurantId,
   tableVisitId,
+  tableNumber,
   onOpenTabsCountChange,
 }: TableTabsPanelProps) {
   const submitting = useRef(false);
@@ -347,6 +349,7 @@ function TableTabsContent({
                     restaurantSlug={restaurantSlug}
                     restaurantId={restaurantId}
                     tab={tab}
+                    tableNumber={tableNumber}
                   />
 
                   {/* Bloco de vincular cliente e encerrar comanda */}

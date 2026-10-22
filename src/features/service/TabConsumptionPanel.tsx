@@ -5,11 +5,14 @@ import { addTabConsumption, cancelTabConsumption, getTabConsumption } from './ta
 import type { ConsumptionProduct, TabConsumptionItem } from './tabConsumption';
 import { advanceKdsItemStatus } from '../kds/kdsService';
 import { groupTabConsumptionItems } from './tabGrouping';
+import { useRestaurant } from '../restaurants/RestaurantProvider';
+import { printTableBillThermal, ThermalPrinterIcon } from '../../components/ThermalReceiptPrint';
 
 interface Props {
   restaurantSlug: string;
   restaurantId: string;
   tab: TableTab;
+  tableNumber?: number | string;
 }
 
 const currency = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -19,7 +22,7 @@ export function TabConsumptionPanel(props: Props) {
   return <ConsumptionContent key={`${props.restaurantId}:${props.tab.id}`} {...props} />;
 }
 
-function ConsumptionContent({ restaurantSlug, restaurantId, tab }: Props) {
+function ConsumptionContent({ restaurantSlug, restaurantId, tab, tableNumber }: Props) {
   const submitting = useRef(false);
   const pendingItemId = useRef<string | null>(null);
   const mounted = useRef(false);
@@ -38,6 +41,9 @@ function ConsumptionContent({ restaurantSlug, restaurantId, tab }: Props) {
   const [notice, setNotice] = useState('');
   const [refresh, setRefresh] = useState(0);
   const [expandedBatches, setExpandedBatches] = useState<Record<string, boolean>>({});
+  const { restaurant } = useRestaurant();
+  const [splitCount, setSplitCount] = useState<number>(1);
+  const [includeServiceFee, setIncludeServiceFee] = useState<boolean>(true);
 
   function toggleExpandBatch(key: string) {
     setExpandedBatches((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -45,7 +51,35 @@ function ConsumptionContent({ restaurantSlug, restaurantId, tab }: Props) {
 
   useEffect(() => {
     mounted.current = true;
-    return () => { mounted.current = false; };
+
+  const feePercent = restaurant?.serviceFeePercent ?? 10;
+  const feeInCents = includeServiceFee && feePercent > 0 ? Math.round((total * feePercent) / 100) : 0;
+  const grandTotalInCents = total + feeInCents;
+  const splitValueInCents = Math.round(grandTotalInCents / splitCount);
+
+  function handlePrintReceipt() {
+    const activeItems = items.filter((it) => it.status === 'active');
+    printTableBillThermal({
+      restaurantName: restaurant?.name || 'Restaurante',
+      tableNumber: tableNumber ?? 'Balcão',
+      tabLabel: tab.label,
+      items: activeItems.map((it) => ({
+        name: it.product_name,
+        quantity: it.quantity,
+        unitPriceInCents: it.unit_price_in_cents,
+        totalInCents: it.line_total_in_cents,
+      })),
+      subtotalInCents: total,
+      serviceFeePercent: feePercent,
+      serviceFeeInCents: feeInCents,
+      totalInCents: grandTotalInCents,
+      splitCount: splitCount,
+      splitValueInCents: splitValueInCents,
+      paperWidth: '80mm',
+    });
+  }
+
+  return () => { mounted.current = false; };
   }, []);
 
   useEffect(() => {
@@ -138,6 +172,33 @@ function ConsumptionContent({ restaurantSlug, restaurantId, tab }: Props) {
       'Entrega na mesa confirmada.',
       () => {},
     );
+  }
+
+  const feePercent = restaurant?.serviceFeePercent ?? 10;
+  const feeInCents = includeServiceFee && feePercent > 0 ? Math.round((total * feePercent) / 100) : 0;
+  const grandTotalInCents = total + feeInCents;
+  const splitValueInCents = Math.round(grandTotalInCents / splitCount);
+
+  function handlePrintReceipt() {
+    const activeItems = items.filter((it) => it.status === 'active');
+    printTableBillThermal({
+      restaurantName: restaurant?.name || 'Restaurante',
+      tableNumber: tableNumber ?? 'Balcão',
+      tabLabel: tab.label,
+      items: activeItems.map((it) => ({
+        name: it.product_name,
+        quantity: it.quantity,
+        unitPriceInCents: it.unit_price_in_cents,
+        totalInCents: it.line_total_in_cents,
+      })),
+      subtotalInCents: total,
+      serviceFeePercent: feePercent,
+      serviceFeeInCents: feeInCents,
+      totalInCents: grandTotalInCents,
+      splitCount: splitCount,
+      splitValueInCents: splitValueInCents,
+      paperWidth: '80mm',
+    });
   }
 
   return (
@@ -302,7 +363,7 @@ function ConsumptionContent({ restaurantSlug, restaurantId, tab }: Props) {
                             onClick={() => void handleConfirmDeliveryItems(group.originalItems)}
                             className="ml-auto inline-flex items-center gap-1 rounded-md bg-emerald-700 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-emerald-800 transition-colors disabled:opacity-50"
                           >
-                            <span>✓ Entregar na Mesa ({group.quantity}x)</span>
+                            <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12" /></svg><span>Entregar na Mesa ({group.quantity}x)</span>
                           </button>
                         )}
                       </div>
@@ -415,9 +476,88 @@ function ConsumptionContent({ restaurantSlug, restaurantId, tab }: Props) {
             </ul>
           )}
 
-          <div className="staff-tab-total-row">
-            <span className="staff-tab-total-label">Total da comanda</span>
-            <strong className="staff-tab-total-value">{currency.format(total / 100)}</strong>
+          <div className="mt-4 pt-3 border-t border-[#ded5c8] dark:border-white/10 space-y-3">
+            {/* Linha de Subtotal */}
+            <div className="flex items-center justify-between text-xs text-stone-600 dark:text-stone-300">
+              <span>Subtotal dos itens:</span>
+              <span className="font-semibold">{currency.format(total / 100)}</span>
+            </div>
+
+            {/* Seletor de Taxa de Serviço (10% Ativo/Inativo) */}
+            <div className="flex items-center justify-between text-xs bg-stone-50 dark:bg-stone-900/60 p-2.5 rounded-xl border border-stone-200 dark:border-stone-800">
+              <label className="flex items-center gap-2 cursor-pointer font-medium text-stone-700 dark:text-stone-300">
+                <input
+                  type="checkbox"
+                  checked={includeServiceFee}
+                  onChange={(e) => setIncludeServiceFee(e.target.checked)}
+                  className="rounded accent-[var(--brand)]"
+                />
+                <span>Taxa de serviço ({feePercent}%)</span>
+              </label>
+              <span className="font-semibold text-stone-800 dark:text-stone-200">
+                {includeServiceFee ? currency.format(feeInCents / 100) : 'R$ 0,00'}
+              </span>
+            </div>
+
+            {/* Total Geral da Comanda */}
+            <div className="staff-tab-total-row flex items-center justify-between py-1">
+              <span className="staff-tab-total-label font-bold text-sm">Total a pagar</span>
+              <strong className="staff-tab-total-value text-xl font-black text-[var(--brand)]">
+                {currency.format(grandTotalInCents / 100)}
+              </strong>
+            </div>
+
+            {/* Controle de Divisão por Pessoas (1 a 20) */}
+            <div className="bg-amber-50/60 dark:bg-amber-950/20 p-3 rounded-xl border border-amber-200/70 dark:border-amber-900/40">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-stone-800 dark:text-stone-200">
+                  Dividir conta entre:
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={splitCount <= 1}
+                    onClick={() => setSplitCount((c) => Math.max(1, c - 1))}
+                    aria-label="Diminuir número de pessoas"
+                    className="w-8 h-8 flex items-center justify-center rounded-lg bg-white dark:bg-stone-800 border border-stone-300 dark:border-stone-700 text-stone-800 dark:text-stone-100 font-bold disabled:opacity-40 hover:bg-stone-100 transition-colors"
+                  >
+                    -
+                  </button>
+                  <span className="font-mono font-bold text-sm min-w-8 text-center text-stone-900 dark:text-stone-100">
+                    {splitCount} {splitCount === 1 ? 'pessoa' : 'pessoas'}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={splitCount >= 20}
+                    onClick={() => setSplitCount((c) => Math.min(20, c + 1))}
+                    aria-label="Aumentar número de pessoas"
+                    className="w-8 h-8 flex items-center justify-center rounded-lg bg-white dark:bg-stone-800 border border-stone-300 dark:border-stone-700 text-stone-800 dark:text-stone-100 font-bold disabled:opacity-40 hover:bg-stone-100 transition-colors"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+
+              {splitCount > 1 && (
+                <div className="mt-2.5 pt-2 border-t border-amber-200/60 dark:border-amber-900/30 flex items-center justify-between text-xs font-bold text-amber-950 dark:text-amber-200">
+                  <span>Valor por pessoa:</span>
+                  <span className="text-sm font-black text-[var(--brand)]">
+                    {currency.format(splitValueInCents / 100)}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Botão Imprimir Conferência (80mm) */}
+            <button
+              type="button"
+              onClick={handlePrintReceipt}
+              className="w-full min-h-11 flex items-center justify-center gap-2 rounded-xl border border-stone-300 bg-white hover:bg-stone-50 dark:bg-stone-800 dark:border-stone-700 dark:hover:bg-stone-700 text-stone-900 dark:text-stone-100 font-semibold text-xs shadow-xs transition-colors"
+              title="Imprimir extrato de conferência de conta na impressora térmica (80mm)"
+            >
+              <ThermalPrinterIcon className="w-4 h-4 text-stone-700 dark:text-stone-300" />
+              <span>Imprimir Conferência (80mm)</span>
+            </button>
           </div>
         </>
       )}

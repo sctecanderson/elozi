@@ -213,6 +213,7 @@ function GuestTabContent({ restaurantSlug, tableNumber }: {
             tableTabId={state.tab.id}
             tabLabel={state.tab.label}
             tabStatus={state.tab.status}
+            totalInCents={state.totalInCents}
           />
         </>}
         {syncNotice && <p role="status" className="text-xs opacity-75">{syncNotice}</p>}

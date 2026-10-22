@@ -659,6 +659,7 @@ function StaffSalonManager({
                                 restaurantSlug={restaurantSlug}
                                 restaurantId={restaurantId}
                                 tableVisitId={currentTableVisit.id}
+                                tableNumber={selectedTableNumber}
                                 onOpenTabsCountChange={handleOpenTabsCountChange}
                             />
 

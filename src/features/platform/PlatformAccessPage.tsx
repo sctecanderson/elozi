@@ -10,6 +10,8 @@ export function PlatformAccessPage() {
   const mounted = useRef(false);
 
   const [checking, setChecking] = useState(true);
+  const [viewMode, setViewMode] = useState<'login' | 'forgot_password'>('login');
+  const [recoveryNotice, setRecoveryNotice] = useState('');
   const [busy, setBusy] = useState(false);
   const [denied, setDenied] = useState(false);
   const [email, setEmail] = useState('');
@@ -69,6 +71,26 @@ export function PlatformAccessPage() {
       mounted.current = false;
     };
   }, [navigate]);
+
+
+  async function handleForgotSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!email.trim() || busy) return;
+    setBusy(true);
+    setError('');
+    setRecoveryNotice('');
+    try {
+      const { error: resetErr } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+        redirectTo: `${window.location.origin}/redefinir-senha`,
+      });
+      if (resetErr) throw resetErr;
+      setRecoveryNotice(`Enviamos um link de recuperação para ${email.trim()}. Verifique sua caixa de entrada e spam.`);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Não foi possível enviar o e-mail de recuperação.');
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function handleSubmit(
     event: FormEvent<HTMLFormElement>,
@@ -200,6 +222,45 @@ export function PlatformAccessPage() {
               {busy ? 'Saindo…' : 'Entrar com outra conta'}
             </button>
           </div>
+        ) : viewMode === 'forgot_password' ? (
+          <form onSubmit={handleForgotSubmit} className="mt-6 space-y-4">
+            <fieldset disabled={busy} className="space-y-4">
+              <label htmlFor="platform-recovery-email">
+                E-mail institucional
+                <input
+                  id="platform-recovery-email"
+                  type="email"
+                  autoComplete="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="seu.email@exemplo.com"
+                />
+              </label>
+
+              {recoveryNotice && (
+                <p role="status" className="rounded-xl border border-emerald-300 bg-emerald-50 p-3 text-xs text-emerald-900 font-medium">
+                  {recoveryNotice}
+                </p>
+              )}
+
+              <button type="submit" className="admin-button primary w-full">
+                {busy ? 'Enviando e-mail…' : 'Enviar link de recuperação'}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setViewMode('login');
+                  setError('');
+                  setRecoveryNotice('');
+                }}
+                className="admin-button secondary w-full"
+              >
+                Voltar ao login
+              </button>
+            </fieldset>
+          </form>
         ) : (
           <form
             onSubmit={(event) => void handleSubmit(event)}
@@ -218,19 +279,30 @@ export function PlatformAccessPage() {
                 />
               </label>
 
-              <label htmlFor="platform-password">
-                Senha
-                <input
-                  id="platform-password"
-                  type="password"
-                  autoComplete="current-password"
-                  required
-                  value={password}
-                  onChange={(event) =>
-                    setPassword(event.target.value)
-                  }
-                />
-              </label>
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold">Senha</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setViewMode('forgot_password');
+                    setError('');
+                    setRecoveryNotice('');
+                  }}
+                  className="text-xs text-stone-500 hover:text-[var(--brand)] underline font-medium"
+                >
+                  Esqueci minha senha
+                </button>
+              </div>
+              <input
+                id="platform-password"
+                type="password"
+                autoComplete="current-password"
+                required
+                value={password}
+                onChange={(event) =>
+                  setPassword(event.target.value)
+                }
+              />
 
               <button
                 type="submit"

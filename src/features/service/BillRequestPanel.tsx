@@ -9,7 +9,10 @@ interface Props {
   tableTabId: string;
   tabLabel: string;
   tabStatus: 'open' | 'closed';
+  totalInCents?: number;
 }
+
+const currencyFormatter = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 
 function elapsed(createdAt: string, now: number) {
   const seconds = Math.max(0, Math.floor((now - Date.parse(createdAt)) / 1000));
@@ -20,7 +23,7 @@ export function BillRequestPanel(props: Props) {
   return <BillRequestContent key={`${props.restaurantSlug}:${props.tableTabId}`} {...props} />;
 }
 
-function BillRequestContent({ restaurantSlug, tableTabId, tabLabel, tabStatus }: Props) {
+function BillRequestContent({ restaurantSlug, tableTabId, tabLabel, tabStatus, totalInCents }: Props) {
   const { restaurant } = useRestaurant();
   const mounted = useRef(false);
   const acting = useRef(false);
@@ -36,6 +39,25 @@ function BillRequestContent({ restaurantSlug, tableTabId, tabLabel, tabStatus }:
   const [syncNotice, setSyncNotice] = useState('');
   const [retryUntil, setRetryUntil] = useState(0);
   const [now, setNow] = useState(Date.now());
+  const [splitCount, setSplitCount] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem(`elozi_bill_split_${tableTabId}`);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (typeof parsed.splitCount === 'number' && parsed.splitCount >= 1 && parsed.splitCount <= 20) {
+          return parsed.splitCount;
+        }
+      }
+    } catch {}
+    return 1;
+  });
+
+  const subtotal = totalInCents ?? 0;
+  const feePercent = restaurant?.serviceFeePercent ?? 0;
+  const feeInCents = includeServiceFee === true && feePercent > 0 ? Math.round((subtotal * feePercent) / 100) : 0;
+  const grandTotalInCents = subtotal + feeInCents;
+  const splitValueInCents = Math.round(grandTotalInCents / splitCount);
+
 
   useEffect(() => {
     mounted.current = true;
@@ -197,6 +219,12 @@ function BillRequestContent({ restaurantSlug, tableTabId, tabLabel, tabStatus }:
         </p>
       )}
 
+      {splitCount > 1 && (
+        <p className="mt-2 text-xs font-semibold text-amber-950 dark:text-amber-100">
+          Divisão informada: Dividir para {splitCount} pessoas ({currencyFormatter.format(splitValueInCents / 100)} por pessoa)
+        </p>
+      )}
+
       {confirmingCancel ? (
         <div className="mt-3 p-3 bg-white/90 dark:bg-stone-900/90 rounded-lg border border-amber-200 dark:border-amber-900/50">
           <p className="text-xs text-amber-950 dark:text-amber-100 font-medium">
@@ -271,6 +299,66 @@ function BillRequestContent({ restaurantSlug, tableTabId, tabLabel, tabStatus }:
           </label>
         </div>
       )}
+
+      {/* Seletor de Divisão de Conta por Pessoa */}
+      <div className="my-3 p-3.5 rounded-xl bg-stone-50 dark:bg-stone-800/80 border border-stone-200 dark:border-stone-700 text-left space-y-3">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-semibold text-stone-800 dark:text-stone-200">
+            Dividir conta entre quantas pessoas?
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={splitCount <= 1}
+              onClick={() => setSplitCount((c) => Math.max(1, c - 1))}
+              aria-label="Diminuir pessoas"
+              className="w-8 h-8 flex items-center justify-center rounded-lg bg-white dark:bg-stone-700 border border-stone-300 dark:border-stone-600 text-stone-800 dark:text-stone-100 font-bold disabled:opacity-40 hover:bg-stone-100 transition-colors"
+            >
+              -
+            </button>
+            <span className="font-mono font-bold text-sm min-w-8 text-center text-stone-900 dark:text-stone-100">
+              {splitCount} {splitCount === 1 ? 'pessoa' : 'pessoas'}
+            </span>
+            <button
+              type="button"
+              disabled={splitCount >= 20}
+              onClick={() => setSplitCount((c) => Math.min(20, c + 1))}
+              aria-label="Aumentar pessoas"
+              className="w-8 h-8 flex items-center justify-center rounded-lg bg-white dark:bg-stone-700 border border-stone-300 dark:border-stone-600 text-stone-800 dark:text-stone-100 font-bold disabled:opacity-40 hover:bg-stone-100 transition-colors"
+            >
+              +
+            </button>
+          </div>
+        </div>
+
+        {/* Resumo Financeiro em Tempo Real (Contraste WCAG AA) */}
+        {subtotal > 0 && (
+          <div className="pt-2.5 border-t border-stone-200 dark:border-stone-700 space-y-1.5 text-xs text-stone-700 dark:text-stone-300">
+            <div className="flex justify-between">
+              <span>Subtotal do consumo:</span>
+              <span className="font-medium text-stone-900 dark:text-stone-100">{currencyFormatter.format(subtotal / 100)}</span>
+            </div>
+            {feePercent > 0 && (
+              <div className="flex justify-between">
+                <span>Taxa de serviço ({feePercent}%):</span>
+                <span className="font-medium text-stone-900 dark:text-stone-100">
+                  {includeServiceFee === true ? currencyFormatter.format(feeInCents / 100) : (includeServiceFee === false ? 'R$ 0,00' : 'Aguardando seleção')}
+                </span>
+              </div>
+            )}
+            <div className="flex justify-between font-bold text-sm text-stone-900 dark:text-stone-100 pt-1 border-t border-stone-200/60 dark:border-stone-700/60">
+              <span>Total geral:</span>
+              <span className="text-[var(--brand)]">{currencyFormatter.format(grandTotalInCents / 100)}</span>
+            </div>
+            {splitCount > 1 && (
+              <div className="mt-2 p-2.5 rounded-lg bg-amber-100/70 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800/60 flex items-center justify-between text-xs font-bold text-amber-950 dark:text-amber-200">
+                <span>Valor por pessoa ({splitCount}x):</span>
+                <span className="text-sm font-black text-[var(--brand)]">{currencyFormatter.format(splitValueInCents / 100)}</span>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
       <div className="mt-3 flex flex-wrap gap-2">
         <button type="button" disabled={disabled || (restaurant.serviceFeePercent > 0 && includeServiceFee === null)} onClick={() => void handleConfirm()}

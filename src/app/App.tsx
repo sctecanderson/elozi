@@ -42,6 +42,11 @@ const TabOrdersPage = lazy(() =>
     default: m.TabOrdersPage,
   })),
 );
+const ResetPasswordPage = lazy(() =>
+  import("../features/auth/ResetPasswordPage").then((m) => ({
+    default: m.ResetPasswordPage,
+  })),
+);
 const AccessPage = lazy(() =>
   import("../features/auth/AccessPage").then((m) => ({
     default: m.AccessPage,
@@ -360,6 +365,7 @@ export function App() {
     <Routes>
       <Route path="/" element={<Start />} />
       <Route path="convite" element={<Suspense fallback={<p role="status" className="shell py-8">Carregando convite…</p>}><StaffInvitationPage /></Suspense>} />
+      <Route path="redefinir-senha" element={<Suspense fallback={<p role="status" className="shell py-8">Carregando…</p>}><ResetPasswordPage /></Suspense>} />
       <Route
         path="plataforma"
         element={

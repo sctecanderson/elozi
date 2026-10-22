@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import type { KdsItem, ProductionStatus } from './kdsService';
+import { printKitchenTicketThermal, ThermalPrinterIcon } from '../../components/ThermalReceiptPrint';
 
 interface KdsItemCardProps {
   item: KdsItem;
@@ -74,32 +75,54 @@ export function KdsItemCard({ item, onAdvance, isMutating = false }: KdsItemCard
             </span>
           </div>
 
-          {/* Cronômetro decorrido com indicador de urgência */}
-          <div
-            className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-mono text-xs font-bold ${
-              urgency === 'urgent'
-                ? 'animate-pulse bg-rose-700 text-white shadow-xs'
-                : urgency === 'warning'
-                ? 'bg-amber-700 text-white shadow-xs'
-                : 'bg-emerald-700 text-white shadow-xs'
-            }`}
-            title={`Tempo decorrido: ${elapsedFormatted}`}
-            aria-label={`Tempo decorrido: ${elapsedMinutes} minutos`}
-          >
-            <svg
-              className="h-3 w-3"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
+          {/* Ações do Card: Imprimir Ticket Térmico e Cronômetro */}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                printKitchenTicketThermal({
+                  tableName: item.table_name,
+                  stationName: stationConfig.label,
+                  productName: item.product_name,
+                  quantity: item.quantity,
+                  timestamp: item.created_at,
+                  orderId: item.id,
+                });
+              }}
+              title="Imprimir via da cozinha (80mm)"
+              aria-label="Imprimir via da cozinha (80mm)"
+              className="inline-flex items-center justify-center p-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 dark:border-zinc-700 dark:hover:bg-zinc-800 text-slate-700 dark:text-zinc-200 transition-colors"
             >
-              <circle cx="12" cy="12" r="10" />
-              <polyline points="12 6 12 12 16 14" />
-            </svg>
-            <span>{elapsedFormatted}</span>
+              <ThermalPrinterIcon className="w-3.5 h-3.5" />
+            </button>
+
+            {/* Cronômetro decorrido com indicador de urgência */}
+            <div
+              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-mono text-xs font-bold ${
+                urgency === 'urgent'
+                  ? 'animate-pulse bg-rose-700 text-white shadow-xs'
+                  : urgency === 'warning'
+                  ? 'bg-amber-700 text-white shadow-xs'
+                  : 'bg-emerald-700 text-white shadow-xs'
+              }`}
+              title={`Tempo decorrido: ${elapsedFormatted}`}
+              aria-label={`Tempo decorrido: ${elapsedMinutes} minutos`}
+            >
+              <svg
+                className="h-3 w-3"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <polyline points="12 6 12 12 16 14" />
+              </svg>
+              <span>{elapsedFormatted}</span>
+            </div>
           </div>
         </div>
 

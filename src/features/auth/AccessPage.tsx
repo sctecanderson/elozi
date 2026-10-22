@@ -24,6 +24,9 @@ function StaffLogin({ restaurantSlug }: { restaurantSlug: string }) {
   const [error, setError] = useState("");
   const [access, setAccess] = useState<StaffAccess | null>(null);
   const [checkingSession, setCheckingSession] = useState(true);
+  const [viewMode, setViewMode] = useState<'login' | 'forgot_password'>('login');
+  const [recoverySent, setRecoverySent] = useState(false);
+  const [recoveryNotice, setRecoveryNotice] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -70,6 +73,27 @@ function StaffLogin({ restaurantSlug }: { restaurantSlug: string }) {
       cancelled = true;
     };
   }, [restaurantSlug]);
+
+
+  async function handleForgotSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!email.trim() || busy) return;
+    setBusy(true);
+    setError('');
+    setRecoveryNotice('');
+    try {
+      const { error: resetErr } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+        redirectTo: `${window.location.origin}/redefinir-senha`,
+      });
+      if (resetErr) throw resetErr;
+      setRecoverySent(true);
+      setRecoveryNotice(`Enviamos um link de recuperação para ${email.trim()}. Verifique sua caixa de entrada e a pasta de spam.`);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Não foi possível enviar o e-mail de recuperação.');
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -183,6 +207,63 @@ function StaffLogin({ restaurantSlug }: { restaurantSlug: string }) {
             {busy ? "Saindo…" : "Sair"}
           </button>
         </div>
+      ) : viewMode === 'forgot_password' ? (
+        <form onSubmit={handleForgotSubmit} aria-busy={busy} className="mt-6">
+          <fieldset disabled={busy} className="space-y-5">
+            <legend className="sr-only">Recuperação de senha</legend>
+
+            <div>
+              <label
+                htmlFor="staff-recovery-email"
+                className="staff-access-label block text-sm font-semibold"
+              >
+                E-mail cadastrado
+              </label>
+
+              <input
+                id="staff-recovery-email"
+                name="email"
+                type="email"
+                autoComplete="email"
+                autoCapitalize="none"
+                spellCheck={false}
+                required
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                placeholder="seu.email@exemplo.com"
+                className="staff-access-input mt-2 min-h-11 w-full rounded-xl border px-4 py-3 text-base"
+              />
+            </div>
+
+            {recoveryNotice && (
+              <div
+                role="status"
+                className="rounded-xl border border-emerald-300 bg-emerald-50 p-3.5 text-xs text-emerald-900 font-medium dark:bg-emerald-950/40 dark:text-emerald-200 dark:border-emerald-800"
+              >
+                {recoveryNotice}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              className="min-h-11 w-full rounded-xl bg-[var(--brand)] px-4 py-3 font-semibold text-white disabled:opacity-60 hover:brightness-105"
+            >
+              {busy ? "Enviando e-mail…" : "Enviar link de recuperação"}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setViewMode('login');
+                setError('');
+                setRecoveryNotice('');
+              }}
+              className="min-h-11 w-full rounded-xl border border-stone-300 dark:border-stone-700 px-4 py-3 font-semibold text-stone-700 dark:text-stone-300 hover:bg-stone-50 dark:hover:bg-stone-800 transition-colors"
+            >
+              Voltar ao login
+            </button>
+          </fieldset>
+        </form>
       ) : (
         <form onSubmit={handleSubmit} aria-busy={busy} className="mt-6">
           <fieldset disabled={busy} className="space-y-5">
@@ -211,12 +292,25 @@ function StaffLogin({ restaurantSlug }: { restaurantSlug: string }) {
             </div>
 
             <div>
-              <label
-                htmlFor="staff-password"
-                className="staff-access-label block text-sm font-semibold"
-              >
-                Senha
-              </label>
+              <div className="flex items-center justify-between">
+                <label
+                  htmlFor="staff-password"
+                  className="staff-access-label block text-sm font-semibold"
+                >
+                  Senha
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setViewMode('forgot_password');
+                    setError('');
+                    setRecoveryNotice('');
+                  }}
+                  className="text-xs text-stone-600 dark:text-stone-400 hover:text-[var(--brand)] underline font-medium"
+                >
+                  Esqueci minha senha
+                </button>
+              </div>
 
               <input
                 id="staff-password"
