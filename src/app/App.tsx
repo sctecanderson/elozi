@@ -21,6 +21,7 @@ import { ThemeProvider, useTheme } from "../features/theme/ThemeContext";
 import { ThemeToggleButton } from "../features/theme/ThemeToggleButton";
 import { StaffCommissionProvider } from "../features/service/StaffCommissionContext";
 import { StaffCommissionHeaderPill } from "../features/service/StaffCommissionHeaderPill";
+import { LandingPage } from "../features/landing/LandingPage";
 
 const ProductPage = lazy(() =>
   import("../features/menu/ProductPage").then((m) => ({
@@ -394,7 +395,8 @@ function Start() {
 export function App() {
   return (
     <Routes>
-      <Route path="/" element={<Start />} />
+      <Route path="/" element={<LandingPage />} />
+      <Route path="login" element={<Suspense fallback={<p role="status" className="shell py-8">Carregando…</p>}><PlatformAccessPage /></Suspense>} />
       <Route path="convite" element={<Suspense fallback={<p role="status" className="shell py-8">Carregando convite…</p>}><StaffInvitationPage /></Suspense>} />
       <Route path="redefinir-senha" element={<Suspense fallback={<p role="status" className="shell py-8">Carregando…</p>}><ResetPasswordPage /></Suspense>} />
       <Route path="criar-conta" element={<Suspense fallback={<p role="status" className="shell py-8">Carregando cadastro…</p>}><PublicOnboardingPage /></Suspense>} />
