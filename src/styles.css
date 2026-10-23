@@ -7266,6 +7266,13 @@ footer a {
     background: #1c1815;
     border-color: rgba(255, 255, 255, 0.12);
     box-shadow: 0 4px 18px rgba(0, 0, 0, 0.4);
+    color: #f7f3ee;
+}
+
+[data-theme="dark"] .admin-card h1,
+[data-theme="dark"] .admin-card h2,
+[data-theme="dark"] .admin-card h3 {
+    color: #f7f3ee;
 }
 
 [data-theme="dark"] .admin-card h2 {

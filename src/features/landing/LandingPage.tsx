@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router';
 import { QRCodeSVG } from 'qrcode.react';
 
@@ -167,7 +167,34 @@ const SEGMENTS: { label: string; icon: SegmentIconType }[] = [
 ];
 
 export function LandingPage() {
-  const [darkTheme, setDarkTheme] = useState(false);
+  const [darkTheme, setDarkTheme] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      const saved = window.localStorage.getItem('elozi_public_theme_preference');
+      if (saved === 'dark') return true;
+      if (saved === 'light') return false;
+    } catch {
+      // ignore
+    }
+    return (
+      document.documentElement.getAttribute('data-theme') === 'dark' ||
+      document.documentElement.classList.contains('dark') ||
+      false
+    );
+  });
+
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      const mode = darkTheme ? 'dark' : 'light';
+      document.documentElement.setAttribute('data-theme', mode);
+      document.documentElement.classList.toggle('dark', darkTheme);
+      try {
+        window.localStorage.setItem('elozi_public_theme_preference', mode);
+      } catch {
+        // ignore
+      }
+    }
+  }, [darkTheme]);
 
   return (
     <div
@@ -178,19 +205,14 @@ export function LandingPage() {
     >
       {/* HEADER */}
       <header className="w-full max-w-[1600px] mx-auto px-5 sm:px-10 pt-5 pb-2 flex items-center justify-between relative z-30">
-        <Link to="/" className="group flex flex-col items-start text-left select-none">
-          <div
-            className={`text-[26px] sm:text-[30px] font-bold tracking-[0.28em] leading-none text-left ${darkTheme ? 'text-white' : 'text-zinc-900'
-              }`}
-          >
-            E L <span className="text-[#E51E25]">O</span> Z I
-          </div>
-          <span
-            className={`text-[11px] font-semibold tracking-[0.25em] uppercase mt-1.5 text-left ${darkTheme ? 'text-zinc-400' : 'text-zinc-500'
-              }`}
-          >
-            EXPERIÊNCIAS DIGITAIS
-          </span>
+        <Link to="/" className="group flex items-center select-none">
+          <img
+            src="/landing/Eloozi.png"
+            alt="Elozi"
+            className={`h-10 sm:h-11 w-auto object-contain transition-all ${
+              darkTheme ? 'brightness-0 invert' : ''
+            }`}
+          />
         </Link>
 
         <div className="flex items-center gap-3">
@@ -497,9 +519,11 @@ export function LandingPage() {
         <div className="max-w-[1600px] mx-auto px-5 sm:px-10 py-3.5 flex flex-col md:flex-row items-center justify-between gap-3 text-xs">
           {/* Esquerda */}
           <div className="flex items-center gap-3.5">
-            <span className="font-bold tracking-[0.25em] text-white text-sm">
-              E L <span className="text-[#E51E25]">O</span> Z I
-            </span>
+            <img
+              src="/landing/Eloozi.png"
+              alt="Elozi"
+              className="h-7 sm:h-8 w-auto object-contain brightness-0 invert"
+            />
             <span className="text-zinc-600">|</span>
             <span className="text-zinc-300">Experiências Digitais para seu Negócio</span>
           </div>

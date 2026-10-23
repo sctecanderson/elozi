@@ -40,6 +40,7 @@ export function PublicOnboardingPage() {
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [termsModalOpen, setTermsModalOpen] = useState(false);
 
@@ -181,23 +182,28 @@ export function PublicOnboardingPage() {
   };
 
   return (
-    <div
-      className="min-h-screen flex flex-col justify-center py-10 px-4 sm:px-6 lg:px-8"
-      style={{ background: '#f5f5f4', color: '#1c1917' }}
-    >
-      <div className="sm:mx-auto sm:w-full sm:max-w-xl">
+    <div className="min-h-screen flex flex-col justify-between py-6 sm:py-10 px-4 sm:px-6 lg:px-8 bg-[#FAF7F2] bg-[url('/landing/background.png')] bg-cover bg-center bg-no-repeat text-zinc-900">
+      <div className="w-full max-w-2xl mx-auto">
+        {/* Barra Superior: Logo à esquerda, link Voltar ao início à direita */}
         <div className="flex items-center justify-between mb-6">
+          <Link to="/" className="inline-flex items-center select-none group">
+            <img
+              src="/landing/Eloozi.png"
+              alt="Elozi"
+              className="h-10 w-auto object-contain transition-transform group-hover:scale-102"
+            />
+          </Link>
+
           <Link
             to="/"
-            className="inline-flex items-center gap-2 text-sm font-semibold transition-opacity hover:opacity-80"
-            style={{ color: '#2B1D17' }}
+            className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-zinc-700 hover:text-zinc-950 transition-colors"
           >
             <svg
               className="w-4 h-4"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
-              strokeWidth="1.75"
+              strokeWidth="2"
               strokeLinecap="round"
               strokeLinejoin="round"
               aria-hidden="true"
@@ -205,60 +211,40 @@ export function PublicOnboardingPage() {
               <line x1="19" y1="12" x2="5" y2="12" />
               <polyline points="12 19 5 12 12 5" />
             </svg>
-            <span>Voltar ao Início</span>
+            <span>Voltar ao início</span>
           </Link>
-
-          <span
-            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider"
-            style={{ background: 'rgba(43, 29, 23, 0.1)', color: '#2B1D17' }}
-          >
-            <svg
-              className="w-3.5 h-3.5"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.75"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <polyline points="20 6 9 17 4 12" />
-            </svg>
-            <span>Teste Grátis 7 Dias — Plano Pro</span>
-          </span>
         </div>
 
-        <div
-          className="rounded-3xl p-6 sm:p-8 border shadow-xl"
-          style={{ background: '#ffffff', borderColor: '#e7e5e4', color: '#1c1917' }}
-        >
+        {/* Card Principal */}
+        <div className="bg-white/95 backdrop-blur-xs rounded-3xl border border-stone-200/90 p-6 sm:p-8 md:p-10 shadow-xl shadow-stone-900/5">
+          {/* Cabeçalho do Card */}
           <div className="mb-6">
-            <p className="text-xs font-bold uppercase tracking-widest" style={{ color: '#78716c' }}>
-              Auto-Atendimento SaaS Elozi
-            </p>
-            <h1 className="text-2xl sm:text-3xl font-extrabold mt-1" style={{ color: '#2B1D17' }}>
-              Criar Meu Restaurante
+            <div className="flex items-center gap-2">
+              <div className="w-5 h-1 bg-red-600 rounded-full" />
+              <span className="text-xs font-bold text-red-600 tracking-wider uppercase">
+                AUTOATENDIMENTO SAAS ELOZI
+              </span>
+            </div>
+            <h1 className="font-extrabold text-2xl sm:text-3xl text-zinc-900 tracking-tight mt-1.5">
+              Crie seu restaurante
             </h1>
-            <p className="text-sm mt-1.5 leading-relaxed" style={{ color: '#57534e' }}>
-              Seu ambiente será criado instantaneamente com 3 mesas configuradas, cardápio demonstrativo e KDS pronto para testar agora mesmo.
+            <p className="text-sm text-zinc-600 mt-1 leading-relaxed">
+              Seu ambiente será criado com mesas, cardápio demonstrativo e KDS pronto para testar.
             </p>
           </div>
 
+          {/* Alerta de Erro */}
           {error && (
             <div
-              className="mb-5 p-4 rounded-2xl border text-sm font-medium flex items-start gap-3"
-              style={{
-                background: '#fef2f2',
-                borderColor: '#fecaca',
-                color: '#b91c1c',
-              }}
+              role="alert"
+              className="mb-5 p-4 rounded-2xl border border-red-200 bg-red-50 text-red-700 text-sm font-medium flex items-start gap-3"
             >
               <svg
                 className="w-5 h-5 shrink-0 mt-0.5"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
-                strokeWidth="1.75"
+                strokeWidth="2"
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 aria-hidden="true"
@@ -271,13 +257,13 @@ export function PublicOnboardingPage() {
             </div>
           )}
 
+          {/* Formulário */}
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* Nome do Restaurante */}
             <div>
               <label
                 htmlFor="onb-restaurant-name"
-                className="block text-xs font-bold uppercase tracking-wider mb-1.5"
-                style={{ color: '#2B1D17' }}
+                className="block text-xs font-bold text-zinc-800 uppercase tracking-wider mb-1.5"
               >
                 Nome do Restaurante *
               </label>
@@ -285,35 +271,23 @@ export function PublicOnboardingPage() {
                 id="onb-restaurant-name"
                 type="text"
                 required
-                placeholder="Ex: Pizzaria Bella Napoli"
+                placeholder="Ex.: Pizzaria Bella Napoli"
                 value={restaurantName}
                 onChange={(e) => handleRestaurantNameChange(e.target.value)}
-                className="w-full rounded-xl border px-3.5 py-2.5 text-sm font-medium focus:outline-none focus:ring-2"
-                style={{
-                  background: '#ffffff',
-                  borderColor: '#d6d3d1',
-                  color: '#1c1917',
-                }}
+                className="w-full rounded-xl border border-stone-300 bg-stone-50/70 px-4 py-3 text-sm font-medium text-zinc-900 placeholder-zinc-400 focus:bg-white focus:border-red-600 focus:outline-none focus:ring-2 focus:ring-red-600/20 transition-all"
               />
             </div>
 
-            {/* Slug / URL */}
+            {/* Endereço Exclusivo (URL) */}
             <div>
               <label
                 htmlFor="onb-slug"
-                className="block text-xs font-bold uppercase tracking-wider mb-1.5"
-                style={{ color: '#2B1D17' }}
+                className="block text-xs font-bold text-zinc-800 uppercase tracking-wider mb-1.5"
               >
                 Endereço Exclusivo do Cardápio (URL) *
               </label>
-              <div
-                className="flex items-center rounded-xl border overflow-hidden"
-                style={{ borderColor: '#d6d3d1', background: '#fafaf9' }}
-              >
-                <span
-                  className="px-3 py-2.5 text-xs font-mono border-r select-none"
-                  style={{ color: '#78716c', borderColor: '#e7e5e4' }}
-                >
+              <div className="flex items-center rounded-xl border border-stone-300 bg-stone-50/70 overflow-hidden focus-within:border-red-600 focus-within:bg-white focus-within:ring-2 focus-within:ring-red-600/20 transition-all">
+                <span className="px-3.5 py-3 text-sm font-mono text-zinc-500 bg-stone-100 border-r border-stone-200 select-none">
                   elozi.com/
                 </span>
                 <input
@@ -323,21 +297,19 @@ export function PublicOnboardingPage() {
                   placeholder="pizzaria-bella-napoli"
                   value={slug}
                   onChange={(e) => handleSlugChange(e.target.value)}
-                  className="w-full px-3 py-2.5 text-sm font-mono font-semibold focus:outline-none"
-                  style={{ background: '#ffffff', color: '#1c1917' }}
+                  className="w-full px-3.5 py-3 text-sm font-mono font-semibold text-zinc-900 placeholder-zinc-400 bg-transparent focus:outline-none"
                 />
               </div>
-              <p className="text-xs mt-1" style={{ color: '#78716c' }}>
-                Seu painel ficará em: <strong style={{ color: '#2B1D17' }}>/{slug || 'seu-restaurante'}/admin</strong>
+              <p className="text-xs text-zinc-500 mt-1.5">
+                Seu painel ficará em: <strong className="text-zinc-800 font-mono">/{slug || 'seu-restaurante'}/admin</strong>
               </p>
             </div>
 
-            {/* WhatsApp / Telefone Comercial */}
+            {/* WhatsApp / Telefone */}
             <div>
               <label
                 htmlFor="onb-phone"
-                className="block text-xs font-bold uppercase tracking-wider mb-1.5"
-                style={{ color: '#2B1D17' }}
+                className="block text-xs font-bold text-zinc-800 uppercase tracking-wider mb-1.5"
               >
                 WhatsApp / Telefone Comercial
               </label>
@@ -347,22 +319,16 @@ export function PublicOnboardingPage() {
                 placeholder="(11) 99999-9999"
                 value={phone}
                 onChange={(e) => setPhone(formatPhoneBR(e.target.value))}
-                className="w-full rounded-xl border px-3.5 py-2.5 text-sm font-medium focus:outline-none focus:ring-2"
-                style={{
-                  background: '#ffffff',
-                  borderColor: '#d6d3d1',
-                  color: '#1c1917',
-                }}
+                className="w-full rounded-xl border border-stone-300 bg-stone-50/70 px-4 py-3 text-sm font-medium text-zinc-900 placeholder-zinc-400 focus:bg-white focus:border-red-600 focus:outline-none focus:ring-2 focus:ring-red-600/20 transition-all"
               />
             </div>
 
-            {/* E-mail e Senha */}
+            {/* Grid de 2 colunas: Email e Senha */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label
                   htmlFor="onb-email"
-                  className="block text-xs font-bold uppercase tracking-wider mb-1.5"
-                  style={{ color: '#2B1D17' }}
+                  className="block text-xs font-bold text-zinc-800 uppercase tracking-wider mb-1.5"
                 >
                   E-mail do Administrador *
                 </label>
@@ -370,70 +336,113 @@ export function PublicOnboardingPage() {
                   id="onb-email"
                   type="email"
                   required
-                  placeholder="contato@restaurante.com.br"
+                  placeholder="voce@restaurante.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full rounded-xl border px-3.5 py-2.5 text-sm font-medium focus:outline-none focus:ring-2"
-                  style={{
-                    background: '#ffffff',
-                    borderColor: '#d6d3d1',
-                    color: '#1c1917',
-                  }}
+                  className="w-full rounded-xl border border-stone-300 bg-stone-50/70 px-4 py-3 text-sm font-medium text-zinc-900 placeholder-zinc-400 focus:bg-white focus:border-red-600 focus:outline-none focus:ring-2 focus:ring-red-600/20 transition-all"
                 />
               </div>
 
               <div>
                 <label
                   htmlFor="onb-password"
-                  className="block text-xs font-bold uppercase tracking-wider mb-1.5"
-                  style={{ color: '#2B1D17' }}
+                  className="block text-xs font-bold text-zinc-800 uppercase tracking-wider mb-1.5"
                 >
                   Senha de Acesso *
                 </label>
-                <input
-                  id="onb-password"
-                  type="password"
-                  required
-                  minLength={6}
-                  placeholder="Mínimo 6 caracteres"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full rounded-xl border px-3.5 py-2.5 text-sm font-medium focus:outline-none focus:ring-2"
-                  style={{
-                    background: '#ffffff',
-                    borderColor: '#d6d3d1',
-                    color: '#1c1917',
-                  }}
-                />
+                <div className="relative">
+                  <input
+                    id="onb-password"
+                    type={showPassword ? 'text' : 'password'}
+                    required
+                    minLength={6}
+                    placeholder="Mínimo 6 caracteres"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full rounded-xl border border-stone-300 bg-stone-50/70 px-4 py-3 pr-11 text-sm font-medium text-zinc-900 placeholder-zinc-400 focus:bg-white focus:border-red-600 focus:outline-none focus:ring-2 focus:ring-red-600/20 transition-all"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    aria-label={showPassword ? 'Ocultar senha' : 'Exibir senha'}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 p-1 cursor-pointer"
+                  >
+                    {showPassword ? (
+                      <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24" />
+                        <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68" />
+                        <path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61" />
+                        <line x1="2" y1="2" x2="22" y2="22" />
+                      </svg>
+                    ) : (
+                      <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
+                        <circle cx="12" cy="12" r="3" />
+                      </svg>
+                    )}
+                  </button>
+                </div>
               </div>
             </div>
 
-            {/* Resumo do Trial */}
-            <div
-              className="rounded-2xl p-4 border text-xs space-y-1.5"
-              style={{ background: '#fafaf9', borderColor: '#e7e5e4', color: '#44403c' }}
-            >
-              <div className="font-bold uppercase tracking-wider" style={{ color: '#2B1D17' }}>
-                Incluso no seu Teste Grátis de 7 Dias (Plano Pro):
+            {/* Card Informativo de Benefícios */}
+            <div className="rounded-2xl p-4.5 border border-zinc-200/70 bg-[#FAF7F2]/90 mt-4">
+              <div className="flex items-center gap-2 text-xs font-bold text-zinc-800 uppercase tracking-wide">
+                <svg
+                  className="w-4 h-4 text-red-600"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <rect x="3" y="8" width="18" height="4" rx="1" />
+                  <path d="M12 8v13" />
+                  <path d="M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7" />
+                  <path d="M7.5 8a2.5 2.5 0 0 1 0-5A4.8 4.8 0 0 1 12 8a4.8 4.8 0 0 1 4.5-5 2.5 2.5 0 0 1 0 5" />
+                </svg>
+                <span>INCLUSO NO TESTE GRÁTIS DE 7 DIAS (PLANO PRO):</span>
               </div>
-              <ul className="space-y-1 list-disc list-inside">
-                <li>Até 15 mesas com QR Codes exclusivos para impressão em folha A4</li>
-                <li>3 mesas e 5 produtos pré-cadastrados para teste imediato</li>
-                <li>KDS Cozinha e Bar em tempo real + Impressão de Cupom Térmico 80mm/58mm</li>
-                <li>Sem cobrança automática: você escolhe seu plano apenas se aprovar</li>
+              <ul className="mt-2.5 space-y-2 text-xs text-zinc-700">
+                <li className="flex items-center gap-2">
+                  <svg className="w-4 h-4 text-red-600 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                  <span>Até 15 mesas com QR Codes para impressão</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <svg className="w-4 h-4 text-red-600 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                  <span>3 mesas e 5 produtos pré-cadastrados</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <svg className="w-4 h-4 text-red-600 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                  <span>KDS de cozinha e bar em tempo real</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <svg className="w-4 h-4 text-red-600 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                  <span>Sem cobrança automática: você escolhe seu plano depois</span>
+                </li>
               </ul>
             </div>
 
             {/* Checkbox Termos de Uso */}
-            <div className="pt-1">
+            <div className="pt-2">
               <label className="flex items-start gap-3 cursor-pointer select-none">
                 <input
                   type="checkbox"
                   checked={acceptedTerms}
                   onChange={(e) => setAcceptedTerms(e.target.checked)}
-                  className="mt-1 w-4 h-4 rounded border-stone-300"
+                  className="mt-1 w-4 h-4 rounded border-stone-300 text-red-600 focus:ring-red-600 cursor-pointer"
                 />
-                <span className="text-xs leading-relaxed" style={{ color: '#44403c' }}>
+                <span className="text-xs text-zinc-600 leading-relaxed">
                   Li e concordo com os{' '}
                   <button
                     type="button"
@@ -441,8 +450,7 @@ export function PublicOnboardingPage() {
                       e.preventDefault();
                       setTermsModalOpen(true);
                     }}
-                    className="font-bold underline hover:opacity-80"
-                    style={{ color: '#2B1D17' }}
+                    className="font-bold text-zinc-900 underline hover:text-red-600 transition-colors"
                   >
                     Termos de Uso e Responsabilidade Fiscal da Plataforma Elozi
                   </button>
@@ -451,33 +459,36 @@ export function PublicOnboardingPage() {
               </label>
             </div>
 
+            {/* Botão de Ação Primário */}
             <button
               type="submit"
               disabled={submitting}
-              className="w-full py-3.5 px-6 rounded-xl font-bold text-sm text-white shadow-md transition-opacity hover:opacity-95 disabled:opacity-50 flex items-center justify-center gap-2"
-              style={{ background: '#2B1D17' }}
+              className="w-full py-4 rounded-2xl bg-red-600 hover:bg-red-700 text-white font-bold text-base shadow-lg shadow-red-600/20 transition-all flex items-center justify-center gap-2 active:scale-[0.99] disabled:opacity-50 cursor-pointer"
             >
               {submitting ? (
-                <span>Provisionando Restaurante e Cardápio...</span>
+                <span className="flex items-center gap-2">
+                  <svg className="animate-spin h-5 w-5 text-white" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                  <span>Provisionando Restaurante e Cardápio...</span>
+                </span>
               ) : (
                 <>
-                  <span>Criar Meu Restaurante e Iniciar Teste de 7 Dias</span>
-                  <svg
-                    className="w-4 h-4"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.75"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden="true"
-                  >
-                    <line x1="5" y1="12" x2="19" y2="12" />
-                    <polyline points="12 5 19 12 12 19" />
-                  </svg>
+                  <span>Criar meu restaurante e iniciar teste de 7 dias</span>
+                  <span aria-hidden="true" className="text-lg leading-none">→</span>
                 </>
               )}
             </button>
+
+            {/* Microcopy */}
+            <div className="flex items-center justify-center gap-1.5 text-xs text-zinc-500 pt-1">
+              <svg className="w-4 h-4 text-emerald-600 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10" />
+                <path d="m9 12 2 2 4-4" />
+              </svg>
+              <span>7 dias para testar • Sem compromisso • Seus dados protegidos</span>
+            </div>
           </form>
         </div>
       </div>
