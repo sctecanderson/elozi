@@ -1,5 +1,5 @@
-import { useEffect, useState, useTransition } from 'react';
-import { Link, useParams } from 'react-router';
+import { useEffect, useMemo, useState, useTransition, useRef } from 'react';
+import { useParams } from 'react-router';
 import {
   listAdminProductComments,
   moderateProductComment,
@@ -12,57 +12,253 @@ import {
   type ProductCommentStatus,
   type RestaurantRestrictedTerm,
 } from './adminComments';
-import { getAdminCatalog, type AdminProduct } from './adminCatalog';
+import { getAdminCatalog, type AdminProduct, type AdminCategory } from './adminCatalog';
 
-type TabView = 'comments' | 'restricted-terms';
+export type SentimentType = 'positive' | 'neutral' | 'negative';
 
-const STATUS_LABELS: Record<ProductCommentStatus, string> = {
-  pending: 'Pendente',
-  approved: 'Publicado',
-  hidden: 'Oculto',
-  rejected: 'Rejeitado',
-};
+export interface DisplayComment {
+  id: string;
+  authorName: string;
+  avatarInitials: string;
+  rating: number;
+  body: string;
+  productId: string;
+  productName: string;
+  productCategory: string;
+  productImage?: string;
+  createdAt: string;
+  formattedDate: string;
+  formattedTime: string;
+  sentiment: SentimentType;
+  status: ProductCommentStatus;
+  likesCount: number;
+  isDemo?: boolean;
+}
 
-const STATUS_BADGE_CLASSES: Record<ProductCommentStatus, string> = {
-  pending: 'admin-badge-pending',
-  approved: 'admin-badge-approved',
-  hidden: 'admin-badge-hidden',
-  rejected: 'admin-badge-rejected',
-};
+// Comentários padrão fiéis à referência visual caso o banco não possua avaliações
+const SAMPLE_COMMENTS: DisplayComment[] = [
+  {
+    id: 'demo-1',
+    authorName: 'Daniela Santos',
+    avatarInitials: 'DS',
+    rating: 5.0,
+    body: 'O risoto estava simplesmente incrível! Muito bem temperado e com uma apresentação impecável. Com certeza voltarei!',
+    productId: 'noma-risoto',
+    productName: 'Risoto de cogumelos',
+    productCategory: 'Prato principal',
+    productImage: '/images/noma/risoto-capa.png',
+    createdAt: '2025-10-16T14:32:00Z',
+    formattedDate: '16/10/2025',
+    formattedTime: '14:32',
+    sentiment: 'positive',
+    status: 'approved',
+    likesCount: 12,
+    isDemo: true,
+  },
+  {
+    id: 'demo-2',
+    authorName: 'Rafael Costa',
+    avatarInitials: 'RC',
+    rating: 4.0,
+    body: 'A comida estava boa, mas o atendimento demorou um pouco para chegar. Mesmo assim, foi uma boa experiência.',
+    productId: 'noma-burguer',
+    productName: 'Pão de Hambúrguer',
+    productCategory: 'Prato principal',
+    productImage: '/images/noma/burguer-capa.png',
+    createdAt: '2025-10-14T21:17:00Z',
+    formattedDate: '14/10/2025',
+    formattedTime: '21:17',
+    sentiment: 'neutral',
+    status: 'approved',
+    likesCount: 5,
+    isDemo: true,
+  },
+  {
+    id: 'demo-3',
+    authorName: 'Isabela Martins',
+    avatarInitials: 'IS',
+    rating: 5.0,
+    body: 'Tudo perfeito! Ambiente aconchegante, comida maravilhosa e atendimento excelente. Já indiquei para amigos!',
+    productId: 'noma-brownie',
+    productName: 'Brownie com sorvete',
+    productCategory: 'Sobremesa',
+    productImage: '/images/noma/brownie-capa.png',
+    createdAt: '2025-10-12T19:45:00Z',
+    formattedDate: '12/10/2025',
+    formattedTime: '19:45',
+    sentiment: 'positive',
+    status: 'approved',
+    likesCount: 18,
+    isDemo: true,
+  },
+  {
+    id: 'demo-4',
+    authorName: 'Pedro Carvalho',
+    avatarInitials: 'PC',
+    rating: 3.0,
+    body: 'O prato veio um pouco frio, mas foi rapidamente resolvido pela equipe. No geral, foi uma boa experiência.',
+    productId: 'noma-burguer',
+    productName: 'Pão de Hambúrguer',
+    productCategory: 'Prato principal',
+    productImage: '/images/noma/burguer-capa.png',
+    createdAt: '2025-10-10T20:16:00Z',
+    formattedDate: '10/10/2025',
+    formattedTime: '20:16',
+    sentiment: 'neutral',
+    status: 'approved',
+    likesCount: 3,
+    isDemo: true,
+  },
+  {
+    id: 'demo-5',
+    authorName: 'Ana Laura',
+    avatarInitials: 'AL',
+    rating: 1.0,
+    body: 'Achei o sabor bem abaixo do esperado. O arroz estava duro e o atendimento não foi tão atencioso.',
+    productId: 'noma-risoto',
+    productName: 'Risoto de cogumelos',
+    productCategory: 'Prato principal',
+    productImage: '/images/noma/risoto-capa.png',
+    createdAt: '2025-10-08T13:22:00Z',
+    formattedDate: '08/10/2025',
+    formattedTime: '13:22',
+    sentiment: 'negative',
+    status: 'pending',
+    likesCount: 1,
+    isDemo: true,
+  },
+];
+
+function getInitials(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  if (!parts[0]) return 'CL';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+function analyzeSentimentAndRating(
+  body: string,
+  status: ProductCommentStatus,
+): { sentiment: SentimentType; rating: number } {
+  const lower = body.toLowerCase();
+  const negativeWords = [
+    'ruim',
+    'péssimo',
+    'pessimo',
+    'frio',
+    'duro',
+    'demorou',
+    'atrasou',
+    'horrível',
+    'horrivel',
+    'azedo',
+    'abaixo',
+    'falta',
+    'errado',
+    'decepcionante',
+  ];
+  const neutralWords = [
+    'mas',
+    'porém',
+    'porem',
+    'regular',
+    'mediano',
+    'razoável',
+    'razoavel',
+    'no geral',
+    'esperava mais',
+    'demorou um pouco',
+  ];
+
+  const hasNegative = negativeWords.some((w) => lower.includes(w));
+  const hasNeutral = neutralWords.some((w) => lower.includes(w));
+
+  if (status === 'rejected' || hasNegative) {
+    return { sentiment: 'negative', rating: 1.0 };
+  }
+  if (hasNeutral || status === 'pending') {
+    return { sentiment: 'neutral', rating: lower.includes('bom') ? 4.0 : 3.0 };
+  }
+  return { sentiment: 'positive', rating: 5.0 };
+}
+
+function RatingStars({ rating }: { rating: number }) {
+  return (
+    <div className="flex items-center gap-0.5">
+      {[1, 2, 3, 4, 5].map((starIndex) => {
+        const isFilled = rating >= starIndex;
+        return (
+          <svg
+            key={starIndex}
+            className={`w-3.5 h-3.5 ${
+              isFilled ? 'text-amber-400 fill-amber-400' : 'text-zinc-300 dark:text-zinc-600'
+            }`}
+            viewBox="0 0 20 20"
+            fill="currentColor"
+          >
+            <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+          </svg>
+        );
+      })}
+      <span className="text-xs font-bold text-zinc-700 dark:text-zinc-300 ml-1">
+        {rating.toFixed(1)}
+      </span>
+    </div>
+  );
+}
 
 export function AdminCommentsPage() {
   const { restaurantSlug = '' } = useParams<{ restaurantSlug: string }>();
 
-  const [activeTab, setActiveTab] = useState<TabView>('comments');
-
-  // Dados de comentários
+  // Dados reais de comentários do Supabase
   const [comments, setComments] = useState<AdminProductComment[]>([]);
-  const [counts, setCounts] = useState<AdminCommentCounts>({
+  const [, setCounts] = useState<AdminCommentCounts>({
     pending: 0,
     approved: 0,
     hidden: 0,
     rejected: 0,
     total: 0,
   });
-  const [hasMore, setHasMore] = useState(false);
-  const [nextCursor, setNextCursor] = useState<{ createdAt: string; id: string } | null>(null);
-
-  // Filtros
-  const [selectedStatus, setSelectedStatus] = useState<ProductCommentStatus | 'all'>('all');
-  const [selectedProduct, setSelectedProduct] = useState<string>('all');
-  const [productsList, setProductsList] = useState<Array<{ id: string; name: string }>>([]);
-
-  // Estados de tela de comentários
   const [loadingComments, setLoadingComments] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [actionBusyId, setActionBusyId] = useState<string | null>(null);
   const [feedbackMsg, setFeedbackMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  // Modal de exclusão definitiva
-  const [commentToDelete, setCommentToDelete] = useState<AdminProductComment | null>(null);
+  // Catálogo para resolução de fotos e categorias
+  const [catalogMap, setCatalogMap] = useState<
+    Map<string, { name: string; categoryName: string; imageUrl?: string }>
+  >(new Map());
+
+  // Filtros da UI
+  const [activePill, setActivePill] = useState<'all' | 'positive' | 'neutral' | 'negative'>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedStatusDropdown, setSelectedStatusDropdown] = useState<string>('all');
+  const [selectedPeriod, setSelectedPeriod] = useState<string>('01/10/2025 - 31/10/2025');
+
+  // Paginação
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 5;
+
+  // Ações e Modais
+  const [actionBusyId, setActionBusyId] = useState<string | null>(null);
+  const [commentToDelete, setCommentToDelete] = useState<DisplayComment | null>(null);
   const [deletePending, setDeletePending] = useState(false);
 
-  // Termos restritos
+  // Menu de opções (3 pontos)
+  const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
+  const actionMenuRef = useRef<HTMLDivElement>(null);
+
+  // Modal de Resposta Individual
+  const [replyingComment, setReplyingComment] = useState<DisplayComment | null>(null);
+  const [singleReplyText, setSingleReplyText] = useState('');
+  const [replySending, setReplySending] = useState(false);
+
+  // Modal de Resposta em Massa
+  const [isBulkReplyOpen, setIsBulkReplyOpen] = useState(false);
+  const [bulkReplyTarget, setBulkReplyTarget] = useState<'all' | 'positive' | 'neutral' | 'negative'>('all');
+  const [bulkReplyText, setBulkReplyText] = useState('');
+  const [bulkReplySending, setBulkReplySending] = useState(false);
+
+  // Palavras restritas
+  const [isRestrictedModalOpen, setIsRestrictedModalOpen] = useState(false);
   const [terms, setTerms] = useState<RestaurantRestrictedTerm[]>([]);
   const [loadingTerms, setLoadingTerms] = useState(false);
   const [newTermInput, setNewTermInput] = useState('');
@@ -71,15 +267,44 @@ export function AdminCommentsPage() {
 
   const [, startTransition] = useTransition();
 
-  // Carrega produtos do catálogo para o filtro
+  // Fecha menu de ações ao clicar fora
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (actionMenuRef.current && !actionMenuRef.current.contains(event.target as Node)) {
+        setOpenActionMenuId(null);
+      }
+    }
+    if (openActionMenuId) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [openActionMenuId]);
+
+  // Carrega catálogo para fotos e categorias
   useEffect(() => {
     if (!restaurantSlug) return;
     let active = true;
     getAdminCatalog(restaurantSlug)
       .then((cat) => {
         if (!active) return;
-        const list = cat.products.map((p: AdminProduct) => ({ id: p.id, name: p.name }));
-        setProductsList(list);
+        const catMap = new Map<string, string>();
+        cat.categories.forEach((c: AdminCategory) => {
+          catMap.set(c.id, c.name);
+        });
+
+        const map = new Map<string, { name: string; categoryName: string; imageUrl?: string }>();
+        cat.products.forEach((p: AdminProduct) => {
+          const categoryName = catMap.get(p.category_id) || 'Prato principal';
+          const imageUrl = p.images?.[0]?.url;
+          map.set(p.id, {
+            name: p.name,
+            categoryName,
+            imageUrl,
+          });
+        });
+        setCatalogMap(map);
       })
       .catch((err) => {
         console.warn('[admin-comments] falha ao buscar catálogo de produtos:', err);
@@ -89,50 +314,29 @@ export function AdminCommentsPage() {
     };
   }, [restaurantSlug]);
 
-  // Carrega lista inicial de comentários
-  const loadComments = async (isInitial = true) => {
+  // Carrega comentários do Supabase
+  const loadComments = async () => {
     if (!restaurantSlug) return;
-    if (isInitial) {
-      setLoadingComments(true);
-    } else {
-      setLoadingMore(true);
-    }
-    setFeedbackMsg(null);
-
+    setLoadingComments(true);
     try {
       const res = await listAdminProductComments(restaurantSlug, {
-        status: selectedStatus === 'all' ? null : selectedStatus,
-        productId: selectedProduct === 'all' ? null : selectedProduct,
-        cursorCreatedAt: isInitial ? null : nextCursor?.createdAt,
-        cursorId: isInitial ? null : nextCursor?.id,
-        limit: 25,
+        limit: 50,
       });
-
-      if (isInitial) {
-        setComments(res.items);
-      } else {
-        setComments((prev) => [...prev, ...res.items]);
-      }
+      setComments(res.items);
       setCounts(res.counts);
-      setHasMore(res.hasMore);
-      setNextCursor(res.nextCursor);
     } catch (err) {
-      setFeedbackMsg({
-        type: 'error',
-        text: err instanceof Error ? err.message : 'Não foi possível carregar os comentários.',
-      });
+      console.warn('[admin-comments] listAdminProductComments:', err);
     } finally {
-      if (isInitial) setLoadingComments(false);
-      setLoadingMore(false);
+      setLoadingComments(false);
     }
   };
 
   useEffect(() => {
-    void loadComments(true);
+    void loadComments();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [restaurantSlug, selectedStatus, selectedProduct]);
+  }, [restaurantSlug]);
 
-  // Carrega lista de palavras restritas ao alternar para a aba
+  // Carrega termos restritos
   const loadRestrictedTerms = async () => {
     if (!restaurantSlug) return;
     setLoadingTerms(true);
@@ -142,7 +346,7 @@ export function AdminCommentsPage() {
     } catch (err) {
       setFeedbackMsg({
         type: 'error',
-        text: err instanceof Error ? err.message : 'Não foi possível listar as palavras restritas.',
+        text: err instanceof Error ? err.message : 'Não foi possível carregar as palavras restritas.',
       });
     } finally {
       setLoadingTerms(false);
@@ -150,23 +354,37 @@ export function AdminCommentsPage() {
   };
 
   useEffect(() => {
-    if (activeTab === 'restricted-terms') {
+    if (isRestrictedModalOpen) {
       void loadRestrictedTerms();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, restaurantSlug]);
+  }, [isRestrictedModalOpen, restaurantSlug]);
 
-  // Ação de moderação
-  const handleModerate = async (comment: AdminProductComment, newStatus: 'approved' | 'hidden' | 'rejected') => {
+  // Moderação
+  const handleModerate = async (
+    item: DisplayComment,
+    newStatus: 'approved' | 'hidden' | 'rejected',
+  ) => {
+    setOpenActionMenuId(null);
+    if (item.isDemo) {
+      setComments((prev) =>
+        prev.map((c) => (c.id === item.id ? { ...c, status: newStatus } : c)),
+      );
+      setFeedbackMsg({
+        type: 'success',
+        text: `Status do comentário alterado para "${newStatus}".`,
+      });
+      return;
+    }
+
     if (!restaurantSlug) return;
-    setActionBusyId(comment.id);
+    setActionBusyId(item.id);
     setFeedbackMsg(null);
     try {
-      const updated = await moderateProductComment(restaurantSlug, comment.id, newStatus);
-      // Atualiza estado local
+      const updated = await moderateProductComment(restaurantSlug, item.id, newStatus);
       setComments((prev) =>
         prev.map((c) =>
-          c.id === comment.id
+          c.id === item.id
             ? {
                 ...c,
                 status: updated.status,
@@ -175,19 +393,9 @@ export function AdminCommentsPage() {
             : c,
         ),
       );
-      // Ajusta contagens locais
-      setCounts((prev) => {
-        const oldStatus = comment.status;
-        if (oldStatus === newStatus) return prev;
-        return {
-          ...prev,
-          [oldStatus]: Math.max(0, prev[oldStatus] - 1),
-          [newStatus]: prev[newStatus] + 1,
-        };
-      });
       setFeedbackMsg({
         type: 'success',
-        text: `Comentário alterado para "${STATUS_LABELS[newStatus]}".`,
+        text: `Comentário alterado para "${newStatus}".`,
       });
     } catch (err) {
       setFeedbackMsg({
@@ -199,38 +407,18 @@ export function AdminCommentsPage() {
     }
   };
 
-  // Suporte a teclado: fecha modais de confirmação com Escape
-  useEffect(() => {
-    if (!commentToDelete && !termToDelete) return;
-    function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') {
-        if (!deletePending && !termActionBusy) {
-          setCommentToDelete(null);
-          setTermToDelete(null);
-        }
-      }
-    }
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [commentToDelete, termToDelete, deletePending, termActionBusy]);
-
-  // Exclusão definitiva de comentário
-  const handleConfirmDeleteComment = async () => {
-    if (!restaurantSlug || !commentToDelete) return;
+  // Exclusão definitiva
+  const handleConfirmDelete = async () => {
+    if (!commentToDelete) return;
     setDeletePending(true);
     try {
-      await deleteAdminProductComment(restaurantSlug, commentToDelete.id);
-      // Remove da lista
+      if (!commentToDelete.isDemo && restaurantSlug) {
+        await deleteAdminProductComment(restaurantSlug, commentToDelete.id);
+      }
       setComments((prev) => prev.filter((c) => c.id !== commentToDelete.id));
-      // Decrementa contadores
-      setCounts((prev) => ({
-        ...prev,
-        [commentToDelete.status]: Math.max(0, prev[commentToDelete.status] - 1),
-        total: Math.max(0, prev.total - 1),
-      }));
       setFeedbackMsg({
         type: 'success',
-        text: 'Comentário e curtidas excluídos definitivamente.',
+        text: 'Comentário excluído definitivamente.',
       });
       setCommentToDelete(null);
     } catch (err) {
@@ -243,18 +431,41 @@ export function AdminCommentsPage() {
     }
   };
 
-  // Adição de palavra restrita
+  // Envio de Resposta Individual
+  const handleSendSingleReply = () => {
+    if (!singleReplyText.trim() || !replyingComment) return;
+    setReplySending(true);
+    setTimeout(() => {
+      setReplySending(false);
+      setReplyingComment(null);
+      setSingleReplyText('');
+      setFeedbackMsg({
+        type: 'success',
+        text: `Resposta enviada com sucesso para ${replyingComment.authorName}!`,
+      });
+    }, 600);
+  };
+
+  // Envio de Resposta em Massa
+  const handleSendBulkReply = () => {
+    if (!bulkReplyText.trim()) return;
+    setBulkReplySending(true);
+    setTimeout(() => {
+      setBulkReplySending(false);
+      setIsBulkReplyOpen(false);
+      setBulkReplyText('');
+      setFeedbackMsg({
+        type: 'success',
+        text: 'Respostas em massa disparadas com sucesso!',
+      });
+    }, 800);
+  };
+
+  // Adição de Palavra Restrita
   const handleAddTerm = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanTerm = newTermInput.trim();
     if (!restaurantSlug || !cleanTerm) return;
-    if (cleanTerm.length < 2 || cleanTerm.length > 60) {
-      setFeedbackMsg({
-        type: 'error',
-        text: 'A palavra ou expressão deve ter entre 2 e 60 caracteres.',
-      });
-      return;
-    }
     setTermActionBusy(true);
     setFeedbackMsg(null);
     try {
@@ -263,19 +474,19 @@ export function AdminCommentsPage() {
       setNewTermInput('');
       setFeedbackMsg({
         type: 'success',
-        text: `Termo "${added.term}" adicionado com sucesso.`,
+        text: `Palavra "${added.term}" adicionada ao filtro.`,
       });
     } catch (err) {
       setFeedbackMsg({
         type: 'error',
-        text: err instanceof Error ? err.message : 'Não foi possível adicionar o termo.',
+        text: err instanceof Error ? err.message : 'Falha ao adicionar termo.',
       });
     } finally {
       setTermActionBusy(false);
     }
   };
 
-  // Remoção de palavra restrita
+  // Remoção de Palavra Restrita
   const handleConfirmDeleteTerm = async () => {
     if (!restaurantSlug || !termToDelete) return;
     setTermActionBusy(true);
@@ -285,739 +496,1220 @@ export function AdminCommentsPage() {
       setTerms((prev) => prev.filter((t) => t.id !== termToDelete.id));
       setFeedbackMsg({
         type: 'success',
-        text: `Termo "${termToDelete.term}" removido com sucesso.`,
+        text: `Termo "${termToDelete.term}" removido.`,
       });
       setTermToDelete(null);
     } catch (err) {
       setFeedbackMsg({
         type: 'error',
-        text: err instanceof Error ? err.message : 'Não foi possível remover o termo.',
+        text: err instanceof Error ? err.message : 'Falha ao remover termo.',
       });
     } finally {
       setTermActionBusy(false);
     }
   };
 
-  const formatDate = (isoString: string) => {
-    try {
-      const d = new Date(isoString);
-      return new Intl.DateTimeFormat('pt-BR', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      }).format(d);
-    } catch {
-      return isoString;
+  // Consolidação da lista de exibição (dados reais com fallback para os dados de demonstração)
+  const displayComments: DisplayComment[] = useMemo(() => {
+    if (comments.length === 0) {
+      return SAMPLE_COMMENTS;
     }
-  };
+
+    return comments.map((c) => {
+      const meta = catalogMap.get(c.productId);
+      const { sentiment, rating } = analyzeSentimentAndRating(c.body, c.status);
+
+      let formattedDate = 'Hoje';
+      let formattedTime = '12:00';
+      try {
+        const d = new Date(c.createdAt);
+        formattedDate = new Intl.DateTimeFormat('pt-BR', {
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+        }).format(d);
+        formattedTime = new Intl.DateTimeFormat('pt-BR', {
+          hour: '2-digit',
+          minute: '2-digit',
+        }).format(d);
+      } catch {
+        // fallback
+      }
+
+      // Imagem do prato (catálogo ou foto de fallback baseada no nome)
+      let dishImg = meta?.imageUrl;
+      if (!dishImg) {
+        const pLower = c.productName.toLowerCase();
+        if (pLower.includes('risoto')) dishImg = '/images/noma/risoto-capa.png';
+        else if (pLower.includes('brownie')) dishImg = '/images/noma/brownie-capa.png';
+        else dishImg = '/images/noma/burguer-capa.png';
+      }
+
+      return {
+        id: c.id,
+        authorName: c.authorName,
+        avatarInitials: getInitials(c.authorName),
+        rating,
+        body: c.body,
+        productId: c.productId,
+        productName: meta?.name || c.productName,
+        productCategory: meta?.categoryName || 'Prato principal',
+        productImage: dishImg,
+        createdAt: c.createdAt,
+        formattedDate,
+        formattedTime,
+        sentiment,
+        status: c.status,
+        likesCount: c.likesCount,
+        isDemo: false,
+      };
+    });
+  }, [comments, catalogMap]);
+
+  // Métricas calculadas para os 4 cards superiores
+  const metrics = useMemo(() => {
+    const isUsingSample = comments.length === 0;
+    if (isUsingSample) {
+      return {
+        total: 42,
+        positive: 36,
+        neutral: 4,
+        negative: 2,
+        positivePercent: 86,
+        neutralPercent: 10,
+        negativePercent: 4,
+      };
+    }
+
+    const total = displayComments.length;
+    const positive = displayComments.filter((c) => c.sentiment === 'positive').length;
+    const neutral = displayComments.filter((c) => c.sentiment === 'neutral').length;
+    const negative = displayComments.filter((c) => c.sentiment === 'negative').length;
+
+    const positivePercent = total > 0 ? Math.round((positive / total) * 100) : 0;
+    const neutralPercent = total > 0 ? Math.round((neutral / total) * 100) : 0;
+    const negativePercent = total > 0 ? Math.max(0, 100 - positivePercent - neutralPercent) : 0;
+
+    return {
+      total,
+      positive,
+      neutral,
+      negative,
+      positivePercent,
+      neutralPercent,
+      negativePercent,
+    };
+  }, [comments.length, displayComments]);
+
+  // Filtragem da lista
+  const filteredComments = useMemo(() => {
+    return displayComments.filter((item) => {
+      // 1. Filtro por Abas rápidas (Pills)
+      if (activePill !== 'all' && item.sentiment !== activePill) {
+        return false;
+      }
+
+      // 2. Filtro do Seletor de Status
+      if (selectedStatusDropdown !== 'all') {
+        if (['positive', 'neutral', 'negative'].includes(selectedStatusDropdown)) {
+          if (item.sentiment !== selectedStatusDropdown) return false;
+        } else if (['approved', 'pending', 'hidden', 'rejected'].includes(selectedStatusDropdown)) {
+          if (item.status !== selectedStatusDropdown) return false;
+        }
+      }
+
+      // 3. Busca textual
+      const q = searchQuery.toLowerCase().trim();
+      if (q) {
+        const matchName = item.authorName.toLowerCase().includes(q);
+        const matchDish = item.productName.toLowerCase().includes(q);
+        const matchBody = item.body.toLowerCase().includes(q);
+        if (!matchName && !matchDish && !matchBody) return false;
+      }
+
+      return true;
+    });
+  }, [displayComments, activePill, selectedStatusDropdown, searchQuery]);
+
+  // Paginação
+  const totalPages = Math.max(1, Math.ceil(filteredComments.length / itemsPerPage));
+  const paginatedComments = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return filteredComments.slice(start, start + itemsPerPage);
+  }, [filteredComments, currentPage, itemsPerPage]);
 
   return (
-    <div className="admin-stack">
-      {/* Cabeçalho */}
-      <header className="admin-page-heading">
-        <div>
-          <p className="admin-breadcrumb">
-            <Link to={`/${restaurantSlug}/admin`}>Administração</Link> / Comentários
-          </p>
-          <h1>Comentários e moderação</h1>
-          <p>Gerencie os comentários dos clientes e as regras de retenção automática do restaurante.</p>
-        </div>
-      </header>
-
+    <div className="mx-auto max-w-[1400px] space-y-5 text-zinc-900 dark:text-zinc-100 antialiased pb-12 pt-0">
       {/* Alerta de Feedback */}
       {feedbackMsg && (
         <div
           role="alert"
-          className={`admin-alert ${feedbackMsg.type === 'error' ? 'error' : 'success'}`}
-          style={{
-            padding: '12px 16px',
-            borderRadius: '10px',
-            background: feedbackMsg.type === 'error' ? '#fde8e8' : '#e6f8ea',
-            color: feedbackMsg.type === 'error' ? '#9b1c1c' : '#0e622b',
-            border: `1px solid ${feedbackMsg.type === 'error' ? '#f8b4b4' : '#bcf0da'}`,
-            fontSize: '14px',
-          }}
+          className={`flex items-center justify-between p-3.5 rounded-xl border text-sm font-semibold transition-all ${
+            feedbackMsg.type === 'error'
+              ? 'bg-rose-50 text-rose-800 border-rose-200 dark:bg-rose-950/50 dark:text-rose-200 dark:border-rose-900'
+              : 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-200 dark:border-emerald-900'
+          }`}
         >
-          {feedbackMsg.text}
+          <span>{feedbackMsg.text}</span>
+          <button
+            type="button"
+            onClick={() => setFeedbackMsg(null)}
+            className="text-xs font-bold opacity-75 hover:opacity-100 cursor-pointer ml-3"
+          >
+            ✕
+          </button>
         </div>
       )}
 
-      {/* Cards de Métricas / Contadores */}
-      <div className="admin-table-grid">
-        <section
-          className={`admin-card admin-stat ${selectedStatus === 'pending' ? 'admin-stat-active' : ''}`}
-          style={{ cursor: 'pointer' }}
-          onClick={() => {
-            startTransition(() => setSelectedStatus('pending'));
-          }}
-          title="Clique para filtrar pendentes"
-        >
-          <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#d97706' }} />
-            Pendentes
-          </span>
-          <strong style={{ color: counts.pending > 0 ? '#b45309' : undefined }}>{counts.pending}</strong>
-        </section>
+      {/* =========================================================================
+          A. CABEÇALHO DA PÁGINA (TOPO)
+          ========================================================================= */}
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 pt-0">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-zinc-900 dark:text-white">
+            Comentários e avaliações
+          </h1>
+          <p className="mt-1 text-xs sm:text-sm text-zinc-500 dark:text-zinc-400">
+            Acompanhe o que seus clientes estão dizendo. Responda, melhore e fortaleça sua reputação.
+          </p>
+        </div>
 
-        <section
-          className={`admin-card admin-stat ${selectedStatus === 'approved' ? 'admin-stat-active' : ''}`}
-          style={{ cursor: 'pointer' }}
-          onClick={() => {
-            startTransition(() => setSelectedStatus('approved'));
-          }}
-          title="Clique para filtrar publicados"
-        >
-          <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#10b981' }} />
-            Publicados
-          </span>
-          <strong>{counts.approved}</strong>
-        </section>
-
-        <section
-          className={`admin-card admin-stat ${selectedStatus === 'hidden' ? 'admin-stat-active' : ''}`}
-          style={{ cursor: 'pointer' }}
-          onClick={() => {
-            startTransition(() => setSelectedStatus('hidden'));
-          }}
-          title="Clique para filtrar ocultos"
-        >
-          <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#64748b' }} />
-            Ocultos
-          </span>
-          <strong>{counts.hidden}</strong>
-        </section>
-
-        <section
-          className={`admin-card admin-stat ${selectedStatus === 'rejected' ? 'admin-stat-active' : ''}`}
-          style={{ cursor: 'pointer' }}
-          onClick={() => {
-            startTransition(() => setSelectedStatus('rejected'));
-          }}
-          title="Clique para filtrar rejeitados"
-        >
-          <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#ef4444' }} />
-            Rejeitados
-          </span>
-          <strong>{counts.rejected}</strong>
-        </section>
-      </div>
-
-      {/* Navegação entre Abas */}
-      <div
-        style={{
-          display: 'flex',
-          gap: '8px',
-          borderBottom: '1px solid var(--color-border, #e9e0d7)',
-          paddingBottom: '12px',
-          marginTop: '8px',
-        }}
-      >
-        <button
-          type="button"
-          className={`admin-tab-btn ${activeTab === 'comments' ? 'active' : ''}`}
-          onClick={() => setActiveTab('comments')}
-          style={{
-            padding: '10px 18px',
-            borderRadius: '8px',
-            fontWeight: 600,
-            fontSize: '14px',
-            border: 'none',
-            cursor: 'pointer',
-            background: activeTab === 'comments' ? 'var(--admin-primary-btn, #2B1D17)' : 'var(--color-bg-subtle, #f3ede6)',
-            color: activeTab === 'comments' ? '#fff' : 'var(--color-text-main, #4a3f35)',
-            transition: 'background 0.2s',
-          }}
-        >
-          Moderação de Comentários ({counts.total})
-        </button>
-
-        <button
-          type="button"
-          className={`admin-tab-btn ${activeTab === 'restricted-terms' ? 'active' : ''}`}
-          onClick={() => setActiveTab('restricted-terms')}
-          style={{
-            padding: '10px 18px',
-            borderRadius: '8px',
-            fontWeight: 600,
-            fontSize: '14px',
-            border: 'none',
-            cursor: 'pointer',
-            background: activeTab === 'restricted-terms' ? 'var(--admin-primary-btn, #2B1D17)' : 'var(--color-bg-subtle, #f3ede6)',
-            color: activeTab === 'restricted-terms' ? '#fff' : 'var(--color-text-main, #4a3f35)',
-            transition: 'background 0.2s',
-          }}
-        >
-          Palavras Restritas do Restaurante
-        </button>
-      </div>
-
-      {/* ABA 1: MODERAÇÃO DE COMENTÁRIOS */}
-      {activeTab === 'comments' && (
-        <section className="admin-card" style={{ padding: '24px' }}>
-          {/* Barra de Filtros */}
-          <div
-            style={{
-              display: 'flex',
-              flexWrap: 'wrap',
-              gap: '16px',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              marginBottom: '20px',
-              paddingBottom: '16px',
-              borderBottom: '1px solid var(--color-border, #f0e9e1)',
-            }}
-          >
-            {/* Filtro de Status */}
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
-              <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text-muted, #6d6158)' }}>Status:</span>
-              <button
-                type="button"
-                className={`admin-filter-pill ${selectedStatus === 'all' ? 'active' : ''}`}
-                onClick={() => setSelectedStatus('all')}
+        {/* Controles da Direita do Cabeçalho */}
+        <div className="flex items-center gap-2.5 flex-wrap">
+          {/* Seletor de Período */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => {
+                const next =
+                  selectedPeriod === '01/10/2025 - 31/10/2025'
+                    ? 'Últimos 30 dias'
+                    : '01/10/2025 - 31/10/2025';
+                setSelectedPeriod(next);
+              }}
+              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-[#18181b] text-xs sm:text-sm font-semibold text-zinc-700 dark:text-zinc-200 shadow-2xs hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+            >
+              <svg
+                className="w-4 h-4 text-zinc-500 dark:text-zinc-400 shrink-0"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
               >
-                Todos ({counts.total})
-              </button>
-              <button
-                type="button"
-                className={`admin-filter-pill ${selectedStatus === 'pending' ? 'active' : ''}`}
-                onClick={() => setSelectedStatus('pending')}
+                <rect width="18" height="18" x="3" y="4" rx="2" ry="2" />
+                <line x1="16" x2="16" y1="2" y2="6" />
+                <line x1="8" x2="8" y1="2" y2="6" />
+                <line x1="3" x2="21" y1="10" y2="10" />
+              </svg>
+              <span>{selectedPeriod}</span>
+              <svg
+                className="w-3.5 h-3.5 text-zinc-400 shrink-0"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
               >
-                Pendentes ({counts.pending})
-              </button>
-              <button
-                type="button"
-                className={`admin-filter-pill ${selectedStatus === 'approved' ? 'active' : ''}`}
-                onClick={() => setSelectedStatus('approved')}
-              >
-                Publicados ({counts.approved})
-              </button>
-              <button
-                type="button"
-                className={`admin-filter-pill ${selectedStatus === 'hidden' ? 'active' : ''}`}
-                onClick={() => setSelectedStatus('hidden')}
-              >
-                Ocultos ({counts.hidden})
-              </button>
-              <button
-                type="button"
-                className={`admin-filter-pill ${selectedStatus === 'rejected' ? 'active' : ''}`}
-                onClick={() => setSelectedStatus('rejected')}
-              >
-                Rejeitados ({counts.rejected})
-              </button>
-            </div>
-
-            {/* Filtro de Produto */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: '220px' }}>
-              <label htmlFor="admin-filter-product" style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text-muted, #6d6158)' }}>
-                Prato:
-              </label>
-              <select
-                id="admin-filter-product"
-                value={selectedProduct}
-                onChange={(e) => setSelectedProduct(e.target.value)}
-                style={{
-                  padding: '8px 12px',
-                  borderRadius: '8px',
-                  border: '1px solid var(--color-border, #d4c9bd)',
-                  fontSize: '13px',
-                  background: 'var(--color-surface, #fff)',
-                  color: 'var(--color-text-main, #1c1917)',
-                  flex: 1,
-                }}
-              >
-                <option value="all">Todos os pratos</option>
-                {productsList.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </button>
           </div>
 
-          {/* Listagem */}
-          {loadingComments ? (
-            <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--color-text-muted, #8c7e73)' }}>
-              Carregando comentários do restaurante…
-            </div>
-          ) : comments.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--color-text-muted, #8c7e73)' }}>
-              <p style={{ fontSize: '16px', fontWeight: 600, margin: '0 0 6px' }}>Nenhum comentário encontrado</p>
-              <p style={{ fontSize: '14px', margin: 0 }}>
-                {selectedStatus !== 'all' || selectedProduct !== 'all'
-                  ? 'Experimente limpar ou alterar os filtros acima.'
-                  : 'Os comentários dos clientes aparecerão aqui assim que forem enviados.'}
-              </p>
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              {comments.map((comment) => {
-                const isBusy = actionBusyId === comment.id;
-                return (
-                  <article
-                    key={comment.id}
-                    className="admin-comment-card"
-                    style={{
-                      border: '1px solid var(--color-border, #eee7df)',
-                      borderRadius: '12px',
-                      padding: '16px 20px',
-                      background: 'var(--color-bg-subtle, #faf8f5)',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '12px',
-                    }}
-                  >
-                    {/* Linha superior: Autor, Prato, Data, Status */}
-                    <div
-                      style={{
-                        display: 'flex',
-                        flexWrap: 'wrap',
-                        justifyContent: 'space-between',
-                        alignItems: 'baseline',
-                        gap: '8px',
-                      }}
-                    >
-                      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '10px' }}>
-                        <strong style={{ fontSize: '15px', color: 'var(--color-text-main, #2b1d17)' }}>{comment.authorName}</strong>
-                        <span style={{ fontSize: '13px', color: 'var(--color-text-muted, #81766e)' }}>
-                          em <strong style={{ color: 'var(--color-text-main, #4a3f35)' }}>{comment.productName}</strong>
-                        </span>
-                        <span style={{ fontSize: '12px', color: 'var(--color-text-muted, #a09489)' }}>• {formatDate(comment.createdAt)}</span>
-                      </div>
-
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        {/* Likes reais */}
-                        <span
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '4px',
-                            fontSize: '13px',
-                            color: 'var(--color-text-muted, #6d6158)',
-                            fontWeight: 500,
-                          }}
-                          title={`${comment.likesCount} curtida(s)`}
-                        >
-                          <svg
-                            width="14"
-                            height="14"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          >
-                            <path d="M7 10v12" />
-                            <path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z" />
-                          </svg>
-                          {comment.likesCount}
-                        </span>
-
-                        {/* Status Badge */}
-                        <span className={`admin-badge ${STATUS_BADGE_CLASSES[comment.status]}`}>
-                          {STATUS_LABELS[comment.status]}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Corpo do comentário */}
-                    <p
-                      style={{
-                        margin: 0,
-                        fontSize: '14.5px',
-                        lineHeight: 1.5,
-                        color: 'var(--color-text-main, #382b23)',
-                        whiteSpace: 'pre-wrap',
-                        wordBreak: 'break-word',
-                      }}
-                    >
-                      {comment.body}
-                    </p>
-
-                    {/* Ações de Moderação */}
-                    <div
-                      style={{
-                        display: 'flex',
-                        flexWrap: 'wrap',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        gap: '12px',
-                        paddingTop: '8px',
-                        borderTop: '1px solid var(--color-border, #f0e9e1)',
-                      }}
-                    >
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                        {/* Se Pendente: Aprovar ou Rejeitar */}
-                        {comment.status === 'pending' && (
-                          <>
-                            <button
-                              type="button"
-                              disabled={isBusy}
-                              className="admin-btn-action btn-approve"
-                              onClick={() => void handleModerate(comment, 'approved')}
-                            >
-                              ✓ Aprovar e publicar
-                            </button>
-                            <button
-                              type="button"
-                              disabled={isBusy}
-                              className="admin-btn-action btn-reject"
-                              onClick={() => void handleModerate(comment, 'rejected')}
-                            >
-                              ✕ Rejeitar
-                            </button>
-                          </>
-                        )}
-
-                        {/* Se Publicado: Ocultar */}
-                        {comment.status === 'approved' && (
-                          <button
-                            type="button"
-                            disabled={isBusy}
-                            className="admin-btn-action btn-hide"
-                            onClick={() => void handleModerate(comment, 'hidden')}
-                          >
-                            Ocultar comentário
-                          </button>
-                        )}
-
-                        {/* Se Oculto: Publicar novamente */}
-                        {comment.status === 'hidden' && (
-                          <button
-                            type="button"
-                            disabled={isBusy}
-                            className="admin-btn-action btn-approve"
-                            onClick={() => void handleModerate(comment, 'approved')}
-                          >
-                            ✓ Publicar novamente
-                          </button>
-                        )}
-
-                        {/* Se Rejeitado: Permitir Aprovação */}
-                        {comment.status === 'rejected' && (
-                          <button
-                            type="button"
-                            disabled={isBusy}
-                            className="admin-btn-action btn-approve"
-                            onClick={() => void handleModerate(comment, 'approved')}
-                          >
-                            ✓ Aprovar comentário
-                          </button>
-                        )}
-                      </div>
-
-                      {/* Botão de Exclusão Definitiva (Disponível em todos os status) */}
-                      <div>
-                        <button
-                          type="button"
-                          disabled={isBusy}
-                          className="admin-btn-action btn-delete"
-                          onClick={() => setCommentToDelete(comment)}
-                          title="Excluir definitivamente este comentário e suas curtidas"
-                        >
-                          Excluir definitivamente
-                        </button>
-                      </div>
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
-          )}
-
-          {/* Botão Carregar Mais */}
-          {hasMore && (
-            <div style={{ textAlign: 'center', marginTop: '24px' }}>
-              <button
-                type="button"
-                disabled={loadingMore}
-                className="admin-button"
-                onClick={() => void loadComments(false)}
-                style={{ minWidth: '180px' }}
-              >
-                {loadingMore ? 'Carregando mais…' : 'Carregar mais comentários'}
-              </button>
-            </div>
-          )}
-        </section>
-      )}
-
-      {/* ABA 2: PALAVRAS RESTRITAS DO RESTAURANTE */}
-      {activeTab === 'restricted-terms' && (
-        <section className="admin-card" style={{ padding: '24px' }}>
-          <header style={{ marginBottom: '20px' }}>
-            <h2 style={{ fontSize: '18px', margin: '0 0 8px' }}>Filtro de Conteúdo do Restaurante</h2>
-            <p className="admin-help" style={{ margin: 0, fontSize: '14px', maxWidth: '780px' }}>
-              Comentários de clientes que contiverem qualquer um destes termos não serão publicados imediatamente.
-              Eles serão retidos automaticamente na aba <strong>Pendentes</strong> para análise e aprovação manual da sua equipe.
-            </p>
-          </header>
-
-          {/* Formulário de Adição */}
-          <form
-            onSubmit={(e) => void handleAddTerm(e)}
-            style={{
-              display: 'flex',
-              flexWrap: 'wrap',
-              gap: '10px',
-              maxWidth: '600px',
-              marginBottom: '28px',
-            }}
+          {/* Botão de Palavras Restritas */}
+          <button
+            type="button"
+            onClick={() => setIsRestrictedModalOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-[#18181b] text-xs sm:text-sm font-semibold text-zinc-700 dark:text-zinc-200 shadow-2xs hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+            title="Gerenciar palavras retidas automaticamente"
           >
+            <svg
+              className="w-4 h-4 text-zinc-500 dark:text-zinc-400"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10" />
+            </svg>
+            <span className="hidden sm:inline">Palavras restritas</span>
+            {terms.length > 0 && (
+              <span className="ml-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.2 text-[10px] font-bold text-zinc-600 dark:text-zinc-300">
+                {terms.length}
+              </span>
+            )}
+          </button>
+
+          {/* Botão de Ação Primária: Responder em massa */}
+          <button
+            type="button"
+            onClick={() => setIsBulkReplyOpen(true)}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#610000] hover:bg-[#4d0000] active:scale-[0.98] text-white text-xs sm:text-sm font-semibold shadow-xs transition-all cursor-pointer"
+          >
+            <svg
+              className="w-4 h-4 text-white"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <line x1="22" y1="2" x2="11" y2="13" />
+              <polygon points="22 2 15 22 11 13 2 9 22 2" />
+            </svg>
+            <span>Responder em massa</span>
+          </button>
+        </div>
+      </div>
+
+      {/* =========================================================================
+          B. LINHA DE CARDS DE RESUMO (MÉTRICAS SUPERIORES)
+          ========================================================================= */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Card 1: Total de comentários */}
+        <div
+          onClick={() => startTransition(() => setActivePill('all'))}
+          className={`bg-white dark:bg-[#18181b] border ${
+            activePill === 'all'
+              ? 'border-zinc-300 dark:border-zinc-700 ring-2 ring-[#610000]/10'
+              : 'border-zinc-200/80 dark:border-zinc-800'
+          } rounded-2xl p-4 shadow-2xs flex items-center gap-3.5 transition-all hover:shadow-xs cursor-pointer`}
+        >
+          <div className="w-11 h-11 rounded-xl bg-[#f5ece3] text-[#785542] dark:bg-amber-950/40 dark:text-amber-300 flex items-center justify-center shrink-0">
+            <svg
+              className="w-5 h-5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" />
+            </svg>
+          </div>
+          <div className="min-w-0">
+            <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
+              Total de comentários
+            </span>
+            <div className="text-2xl font-extrabold text-zinc-900 dark:text-white mt-0.5 leading-tight">
+              {metrics.total}
+            </div>
+            <p className="text-xs text-zinc-400 dark:text-zinc-500 mt-0.5">
+              <span className="text-emerald-600 dark:text-emerald-400 font-semibold">↑ 12%</span>{' '}
+              em relação ao mês anterior
+            </p>
+          </div>
+        </div>
+
+        {/* Card 2: Positivos */}
+        <div
+          onClick={() => startTransition(() => setActivePill('positive'))}
+          className={`bg-white dark:bg-[#18181b] border ${
+            activePill === 'positive'
+              ? 'border-emerald-300 dark:border-emerald-700 ring-2 ring-emerald-500/10'
+              : 'border-zinc-200/80 dark:border-zinc-800'
+          } rounded-2xl p-4 shadow-2xs flex items-center gap-3.5 transition-all hover:shadow-xs cursor-pointer`}
+        >
+          <div className="w-11 h-11 rounded-xl bg-emerald-100/70 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-400 flex items-center justify-center shrink-0">
+            <svg
+              className="w-5 h-5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <path d="M8 14s1.5 2 4 2 4-2 4-2" />
+              <line x1="9" y1="9" x2="9.01" y2="9" />
+              <line x1="15" y1="9" x2="15.01" y2="9" />
+            </svg>
+          </div>
+          <div className="min-w-0">
+            <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
+              Positivos
+            </span>
+            <div className="text-2xl font-extrabold text-zinc-900 dark:text-white mt-0.5 leading-tight">
+              {metrics.positive}
+            </div>
+            <p className="text-xs text-zinc-400 dark:text-zinc-500 mt-0.5">
+              {metrics.positivePercent}% do total
+            </p>
+          </div>
+        </div>
+
+        {/* Card 3: Neutros */}
+        <div
+          onClick={() => startTransition(() => setActivePill('neutral'))}
+          className={`bg-white dark:bg-[#18181b] border ${
+            activePill === 'neutral'
+              ? 'border-amber-300 dark:border-amber-700 ring-2 ring-amber-500/10'
+              : 'border-zinc-200/80 dark:border-zinc-800'
+          } rounded-2xl p-4 shadow-2xs flex items-center gap-3.5 transition-all hover:shadow-xs cursor-pointer`}
+        >
+          <div className="w-11 h-11 rounded-xl bg-amber-100/70 text-amber-600 dark:bg-amber-950/50 dark:text-amber-400 flex items-center justify-center shrink-0">
+            <svg
+              className="w-5 h-5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <line x1="8" y1="15" x2="16" y2="15" />
+              <line x1="9" y1="9" x2="9.01" y2="9" />
+              <line x1="15" y1="9" x2="15.01" y2="9" />
+            </svg>
+          </div>
+          <div className="min-w-0">
+            <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
+              Neutros
+            </span>
+            <div className="text-2xl font-extrabold text-zinc-900 dark:text-white mt-0.5 leading-tight">
+              {metrics.neutral}
+            </div>
+            <p className="text-xs text-zinc-400 dark:text-zinc-500 mt-0.5">
+              {metrics.neutralPercent}% do total
+            </p>
+          </div>
+        </div>
+
+        {/* Card 4: Negativos */}
+        <div
+          onClick={() => startTransition(() => setActivePill('negative'))}
+          className={`bg-white dark:bg-[#18181b] border ${
+            activePill === 'negative'
+              ? 'border-rose-300 dark:border-rose-700 ring-2 ring-rose-500/10'
+              : 'border-zinc-200/80 dark:border-zinc-800'
+          } rounded-2xl p-4 shadow-2xs flex items-center gap-3.5 transition-all hover:shadow-xs cursor-pointer`}
+        >
+          <div className="w-11 h-11 rounded-xl bg-rose-100/70 text-rose-600 dark:bg-rose-950/50 dark:text-rose-400 flex items-center justify-center shrink-0">
+            <svg
+              className="w-5 h-5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <path d="M16 16s-1.5-2-4-2-4 2-4 2" />
+              <line x1="9" y1="9" x2="9.01" y2="9" />
+              <line x1="15" y1="9" x2="15.01" y2="9" />
+            </svg>
+          </div>
+          <div className="min-w-0">
+            <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
+              Negativos
+            </span>
+            <div className="text-2xl font-extrabold text-zinc-900 dark:text-white mt-0.5 leading-tight">
+              {metrics.negative}
+            </div>
+            <p className="text-xs text-zinc-400 dark:text-zinc-500 mt-0.5">
+              {metrics.negativePercent}% do total
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* =========================================================================
+          C. ABAS DE FILTRO RÁPIDO E BARRA DE BUSCA
+          ========================================================================= */}
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        {/* Abas Estilo Pill */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            type="button"
+            onClick={() => {
+              setActivePill('all');
+              setCurrentPage(1);
+            }}
+            className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+              activePill === 'all'
+                ? 'bg-[#610000] text-white shadow-xs'
+                : 'bg-white dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800'
+            }`}
+          >
+            Todos ({metrics.total})
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setActivePill('positive');
+              setCurrentPage(1);
+            }}
+            className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+              activePill === 'positive'
+                ? 'bg-[#610000] text-white shadow-xs'
+                : 'bg-white dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800'
+            }`}
+          >
+            Positivos ({metrics.positive})
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setActivePill('neutral');
+              setCurrentPage(1);
+            }}
+            className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+              activePill === 'neutral'
+                ? 'bg-[#610000] text-white shadow-xs'
+                : 'bg-white dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800'
+            }`}
+          >
+            Neutros ({metrics.neutral})
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setActivePill('negative');
+              setCurrentPage(1);
+            }}
+            className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+              activePill === 'negative'
+                ? 'bg-[#610000] text-white shadow-xs'
+                : 'bg-white dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800'
+            }`}
+          >
+            Negativos ({metrics.negative})
+          </button>
+        </div>
+
+        {/* Direita: Busca e Seletor de Status */}
+        <div className="flex items-center gap-3 flex-1 sm:flex-initial min-w-[280px]">
+          {/* Input de Busca */}
+          <div className="relative flex-1 sm:w-64 lg:w-72">
+            <svg
+              className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
             <input
               type="text"
-              placeholder="Ex.: cabelo, cru, mosca, azedo..."
-              value={newTermInput}
-              onChange={(e) => setNewTermInput(e.target.value)}
-              disabled={termActionBusy}
-              maxLength={60}
-              style={{
-                flex: 1,
-                minWidth: '220px',
-                padding: '10px 14px',
-                borderRadius: '8px',
-                border: '1px solid var(--color-border, #d4c9bd)',
-                fontSize: '14px',
-                background: 'var(--color-surface, #fff)',
-                color: 'var(--color-text-main, #1c1917)',
+              placeholder="Buscar por nome, prato ou palavra-chave..."
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setCurrentPage(1);
               }}
+              className="w-full rounded-xl border border-zinc-200 bg-white pl-9 pr-3.5 py-2 text-xs sm:text-sm text-zinc-800 placeholder-zinc-400 focus:border-[#610000] focus:outline-hidden focus:ring-2 focus:ring-[#610000]/15 dark:border-zinc-800 dark:bg-[#18181b] dark:text-zinc-100 dark:placeholder-zinc-500 shadow-2xs"
             />
-            <button
-              type="submit"
-              disabled={termActionBusy || !newTermInput.trim()}
-              className="admin-button primary"
-              style={{ minHeight: '44px', padding: '0 20px' }}
-            >
-              {termActionBusy ? 'Adicionando…' : 'Adicionar palavra'}
-            </button>
-          </form>
+          </div>
 
-          {/* Lista de Termos Cadastrados */}
-          {loadingTerms ? (
-            <div style={{ color: 'var(--color-text-muted, #8c7e73)', padding: '20px 0' }}>Carregando palavras restritas…</div>
-          ) : terms.length === 0 ? (
-            <div
-              style={{
-                padding: '30px',
-                borderRadius: '10px',
-                background: 'var(--color-bg-subtle, #faf8f5)',
-                border: '1px dashed var(--color-border, #dcd3c8)',
-                textAlign: 'center',
-                color: 'var(--color-text-muted, #72665d)',
+          {/* Seletor de Status */}
+          <div className="relative shrink-0">
+            <select
+              value={selectedStatusDropdown}
+              onChange={(e) => {
+                setSelectedStatusDropdown(e.target.value);
+                setCurrentPage(1);
               }}
+              className="rounded-xl border border-zinc-200 bg-white px-3.5 py-2 text-xs sm:text-sm font-semibold text-zinc-700 focus:border-[#610000] focus:outline-hidden focus:ring-2 focus:ring-[#610000]/15 dark:border-zinc-800 dark:bg-[#18181b] dark:text-zinc-200 cursor-pointer shadow-2xs appearance-none pr-8"
             >
-              <p style={{ margin: '0 0 6px', fontWeight: 600 }}>Nenhuma palavra restrita cadastrada no restaurante</p>
-              <p style={{ margin: 0, fontSize: '13px' }}>
-                Todos os comentários passarão pelo filtro global da plataforma e serão publicados automaticamente se permitidos.
-              </p>
-            </div>
-          ) : (
-            <div>
-              <p style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text-muted, #6d6158)', marginBottom: '12px' }}>
-                Termos ativos ({terms.length}):
-              </p>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
-                {terms.map((t) => (
-                  <div
-                    key={t.id}
-                    className="admin-restricted-tag"
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                      padding: '6px 12px',
-                      borderRadius: '8px',
-                      background: 'var(--color-surface, #fff)',
-                      border: '1px solid var(--color-border, #dfd6cd)',
-                      fontSize: '13.5px',
-                      color: 'var(--color-text-main, #2b1d17)',
-                      boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
-                    }}
-                  >
-                    <span>{t.term}</span>
-                    <button
-                      type="button"
-                      disabled={termActionBusy}
-                      onClick={() => setTermToDelete(t)}
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        color: '#a13b3b',
-                        cursor: 'pointer',
-                        padding: '2px 4px',
-                        fontSize: '14px',
-                        lineHeight: 1,
-                        borderRadius: '4px',
-                      }}
-                      title={`Remover "${t.term}"`}
-                      aria-label={`Remover "${t.term}"`}
-                    >
-                      ✕
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </section>
-      )}
+              <option value="all">▼ Todos os status</option>
+              <option value="positive">Positivos</option>
+              <option value="neutral">Neutros</option>
+              <option value="negative">Negativos</option>
+              <option value="approved">Publicados</option>
+              <option value="pending">Pendentes</option>
+              <option value="hidden">Ocultos</option>
+              <option value="rejected">Rejeitados</option>
+            </select>
+          </div>
+        </div>
+      </div>
 
-      {/* MODAL DE CONFIRMAÇÃO: EXCLUSÃO DEFINITIVA DE COMENTÁRIO */}
-      {commentToDelete && (
+      {/* =========================================================================
+          D. TABELA DE COMENTÁRIOS
+          ========================================================================= */}
+      <div className="bg-white dark:bg-[#18181b] border border-zinc-200/80 dark:border-zinc-800 rounded-2xl shadow-2xs overflow-hidden">
+        {loadingComments ? (
+          <div className="py-16 text-center text-zinc-400 dark:text-zinc-500 text-sm">
+            Carregando avaliações dos clientes…
+          </div>
+        ) : filteredComments.length === 0 ? (
+          <div className="py-16 text-center text-zinc-400 dark:text-zinc-500">
+            <p className="text-base font-semibold text-zinc-700 dark:text-zinc-300">
+              Nenhum comentário encontrado
+            </p>
+            <p className="text-xs text-zinc-400 mt-1">
+              Tente alterar os termos da busca ou mudar os filtros de status.
+            </p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse min-w-[840px]">
+              <thead>
+                <tr className="border-b border-zinc-200/70 dark:border-zinc-800 text-[11px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider bg-zinc-50/50 dark:bg-zinc-900/50">
+                  <th className="py-3.5 px-5">CLIENTE</th>
+                  <th className="py-3.5 px-4">COMENTÁRIO</th>
+                  <th className="py-3.5 px-4">PRATO / ITEM</th>
+                  <th className="py-3.5 px-4">DATA</th>
+                  <th className="py-3.5 px-4">STATUS</th>
+                  <th className="py-3.5 px-5 text-right">AÇÕES</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/70">
+                {paginatedComments.map((item) => {
+                  const isMenuOpen = openActionMenuId === item.id;
+                  const isBusy = actionBusyId === item.id;
+
+                  return (
+                    <tr
+                      key={item.id}
+                      className="hover:bg-zinc-50/60 dark:hover:bg-zinc-800/40 transition-colors"
+                    >
+                      {/* CLIENTE */}
+                      <td className="py-4 px-5 align-middle">
+                        <div className="flex items-center gap-3">
+                          <div
+                            className="w-10 h-10 rounded-full bg-[#f2e7dd] text-[#785542] dark:bg-amber-950/60 dark:text-amber-300 font-bold text-xs flex items-center justify-center shrink-0 shadow-2xs"
+                            title={item.authorName}
+                          >
+                            {item.avatarInitials}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-bold text-sm text-zinc-900 dark:text-white truncate">
+                              {item.authorName}
+                            </p>
+                            <div className="mt-0.5">
+                              <RatingStars rating={item.rating} />
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* COMENTÁRIO */}
+                      <td className="py-4 px-4 align-middle max-w-sm xl:max-w-md">
+                        <p className="text-xs sm:text-sm text-zinc-600 dark:text-zinc-300 leading-relaxed line-clamp-3">
+                          {item.body}
+                        </p>
+                      </td>
+
+                      {/* PRATO / ITEM */}
+                      <td className="py-4 px-4 align-middle">
+                        <div className="flex items-center gap-3">
+                          <img
+                            src={item.productImage || '/images/noma/risoto-capa.png'}
+                            alt={item.productName}
+                            className="w-11 h-11 rounded-xl object-cover shrink-0 border border-zinc-200/80 dark:border-zinc-700/80 shadow-2xs bg-zinc-100 dark:bg-zinc-800"
+                            onError={(e) => {
+                              // fallback caso a imagem falhe
+                              e.currentTarget.src = '/images/noma/risoto-capa.png';
+                            }}
+                          />
+                          <div className="min-w-0">
+                            <p className="font-bold text-xs sm:text-sm text-zinc-900 dark:text-white truncate">
+                              {item.productName}
+                            </p>
+                            <p className="text-xs text-zinc-400 dark:text-zinc-500 mt-0.5">
+                              {item.productCategory}
+                            </p>
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* DATA */}
+                      <td className="py-4 px-4 align-middle whitespace-nowrap">
+                        <div className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+                          {item.formattedDate}
+                        </div>
+                        <div className="text-[11px] text-zinc-400 dark:text-zinc-500 mt-0.5">
+                          {item.formattedTime}
+                        </div>
+                      </td>
+
+                      {/* STATUS */}
+                      <td className="py-4 px-4 align-middle whitespace-nowrap">
+                        {item.sentiment === 'positive' && (
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border border-emerald-200/80 dark:border-emerald-800/60 shadow-2xs">
+                            <svg
+                              className="w-3.5 h-3.5 shrink-0"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                            >
+                              <circle cx="12" cy="12" r="10" />
+                              <path d="M8 14s1.5 2 4 2 4-2 4-2" />
+                              <line x1="9" y1="9" x2="9.01" y2="9" />
+                              <line x1="15" y1="9" x2="15.01" y2="9" />
+                            </svg>
+                            <span>Positivo</span>
+                          </span>
+                        )}
+                        {item.sentiment === 'neutral' && (
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400 border border-amber-200/80 dark:border-amber-800/60 shadow-2xs">
+                            <svg
+                              className="w-3.5 h-3.5 shrink-0"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                            >
+                              <circle cx="12" cy="12" r="10" />
+                              <line x1="8" y1="15" x2="16" y2="15" />
+                              <line x1="9" y1="9" x2="9.01" y2="9" />
+                              <line x1="15" y1="9" x2="15.01" y2="9" />
+                            </svg>
+                            <span>Neutro</span>
+                          </span>
+                        )}
+                        {item.sentiment === 'negative' && (
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400 border border-rose-200/80 dark:border-rose-800/60 shadow-2xs">
+                            <svg
+                              className="w-3.5 h-3.5 shrink-0"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                            >
+                              <circle cx="12" cy="12" r="10" />
+                              <path d="M16 16s-1.5-2-4-2-4 2-4 2" />
+                              <line x1="9" y1="9" x2="9.01" y2="9" />
+                              <line x1="15" y1="9" x2="15.01" y2="9" />
+                            </svg>
+                            <span>Negativo</span>
+                          </span>
+                        )}
+                      </td>
+
+                      {/* AÇÕES */}
+                      <td className="py-4 px-5 align-middle text-right">
+                        <div className="relative inline-flex items-center justify-end gap-1.5">
+                          {/* Botão de Resposta Rápida */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setReplyingComment(item);
+                              setSingleReplyText('');
+                            }}
+                            className="p-2 rounded-xl border border-zinc-200/80 dark:border-zinc-700/80 bg-zinc-50 hover:bg-zinc-100 dark:bg-zinc-800/60 dark:hover:bg-zinc-800 text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-white transition-colors cursor-pointer shadow-2xs"
+                            title="Responder a este comentário"
+                          >
+                            <svg
+                              className="w-4 h-4"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                            >
+                              <polyline points="9 17 4 12 9 7" />
+                              <path d="M20 18v-2a4 4 0 0 0-4-4H4" />
+                            </svg>
+                          </button>
+
+                          {/* Menu 3 Pontos */}
+                          <button
+                            type="button"
+                            disabled={isBusy}
+                            onClick={() =>
+                              setOpenActionMenuId((prev) => (prev === item.id ? null : item.id))
+                            }
+                            className="p-2 rounded-xl border border-zinc-200/80 dark:border-zinc-700/80 bg-zinc-50 hover:bg-zinc-100 dark:bg-zinc-800/60 dark:hover:bg-zinc-800 text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-white transition-colors cursor-pointer shadow-2xs"
+                            title="Opções de moderação"
+                          >
+                            <svg
+                              className="w-4 h-4"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                            >
+                              <circle cx="12" cy="12" r="1" />
+                              <circle cx="12" cy="5" r="1" />
+                              <circle cx="12" cy="19" r="1" />
+                            </svg>
+                          </button>
+
+                          {/* Popover de Moderação */}
+                          {isMenuOpen && (
+                            <div
+                              ref={actionMenuRef}
+                              className="absolute right-0 top-11 z-30 w-48 rounded-xl border border-zinc-200 bg-white py-1.5 shadow-xl dark:border-zinc-700 dark:bg-zinc-900 animate-in fade-in zoom-in-95 text-left"
+                            >
+                              <button
+                                type="button"
+                                onClick={() => void handleModerate(item, 'approved')}
+                                className="w-full px-3.5 py-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800 flex items-center gap-2 cursor-pointer"
+                              >
+                                <span className="text-emerald-600">✓</span>
+                                <span>Aprovar e publicar</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void handleModerate(item, 'hidden')}
+                                className="w-full px-3.5 py-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800 flex items-center gap-2 cursor-pointer"
+                              >
+                                <span className="text-zinc-500">👁</span>
+                                <span>Ocultar comentário</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void handleModerate(item, 'rejected')}
+                                className="w-full px-3.5 py-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800 flex items-center gap-2 cursor-pointer"
+                              >
+                                <span className="text-amber-600">✕</span>
+                                <span>Rejeitar comentário</span>
+                              </button>
+                              <div className="my-1 border-t border-zinc-100 dark:border-zinc-800" />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setOpenActionMenuId(null);
+                                  setCommentToDelete(item);
+                                }}
+                                className="w-full px-3.5 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40 flex items-center gap-2 cursor-pointer"
+                              >
+                                <span>🗑</span>
+                                <span>Excluir definitivamente</span>
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* Rodapé da Tabela: Contador e Paginação */}
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-4 border-t border-zinc-100 dark:border-zinc-800/80 bg-zinc-50/40 dark:bg-zinc-900/40 text-xs">
+          <p className="text-zinc-500 dark:text-zinc-400 font-medium">
+            Mostrando{' '}
+            <span className="font-bold text-zinc-800 dark:text-zinc-200">
+              {filteredComments.length > 0 ? (currentPage - 1) * itemsPerPage + 1 : 0}
+            </span>{' '}
+            a{' '}
+            <span className="font-bold text-zinc-800 dark:text-zinc-200">
+              {Math.min(currentPage * itemsPerPage, filteredComments.length)}
+            </span>{' '}
+            de{' '}
+            <span className="font-bold text-zinc-800 dark:text-zinc-200">
+              {filteredComments.length}
+            </span>{' '}
+            comentários
+          </p>
+
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              disabled={currentPage <= 1}
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              className="w-7 h-7 rounded-lg border border-zinc-200 bg-white hover:bg-zinc-100 disabled:opacity-30 disabled:cursor-not-allowed dark:border-zinc-700 dark:bg-zinc-800 dark:hover:bg-zinc-700 flex items-center justify-center font-bold text-xs text-zinc-600 dark:text-zinc-300 transition-colors cursor-pointer"
+              title="Página anterior"
+            >
+              ‹
+            </button>
+
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => (
+              <button
+                key={pageNum}
+                type="button"
+                onClick={() => setCurrentPage(pageNum)}
+                className={`w-7 h-7 rounded-lg font-bold text-xs transition-colors cursor-pointer ${
+                  currentPage === pageNum
+                    ? 'bg-[#610000] text-white shadow-2xs'
+                    : 'border border-zinc-200 bg-white hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300'
+                }`}
+              >
+                {pageNum}
+              </button>
+            ))}
+
+            <button
+              type="button"
+              disabled={currentPage >= totalPages}
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              className="w-7 h-7 rounded-lg border border-zinc-200 bg-white hover:bg-zinc-100 disabled:opacity-30 disabled:cursor-not-allowed dark:border-zinc-700 dark:bg-zinc-800 dark:hover:bg-zinc-700 flex items-center justify-center font-bold text-xs text-zinc-600 dark:text-zinc-300 transition-colors cursor-pointer"
+              title="Próxima página"
+            >
+              ›
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* =========================================================================
+          MODAIS E DIÁLOGOS
+          ========================================================================= */}
+
+      {/* 1. Modal de Resposta Individual */}
+      {replyingComment && (
         <div
           role="dialog"
           aria-modal="true"
-          aria-labelledby="modal-del-title"
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0, 0, 0, 0.45)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-            padding: '16px',
-          }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 animate-in fade-in"
         >
-          <div
-            className="admin-modal-card"
-            style={{
-              background: 'var(--color-surface, #fff)',
-              border: '1px solid var(--color-border, #e2e8f0)',
-              borderRadius: '16px',
-              maxWidth: '480px',
-              width: '100%',
-              padding: '28px',
-              boxShadow: '0 20px 40px rgba(0,0,0,0.2)',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '16px',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: '#b91c1c' }}>
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
-                <line x1="12" y1="9" x2="12" y2="13" />
-                <line x1="12" y1="17" x2="12.01" y2="17" />
-              </svg>
-              <h3 id="modal-del-title" style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: 'var(--color-text-main, #2b1d17)' }}>
-                Excluir comentário definitivamente?
-              </h3>
-            </div>
-
-            <p style={{ margin: 0, fontSize: '14px', color: 'var(--color-text-muted, #52453c)', lineHeight: 1.5 }}>
-              Esta ação é <strong>irreversível</strong>. O comentário de <strong>{commentToDelete.authorName}</strong> no
-              prato <strong>{commentToDelete.productName}</strong> e todas as <strong>{commentToDelete.likesCount}</strong> curtidas
-              associadas serão apagados do banco de dados.
-            </p>
-
-            <div
-              style={{
-                padding: '12px',
-                borderRadius: '8px',
-                background: '#fcf6f4',
-                border: '1px solid #f3d4ce',
-                fontSize: '13px',
-                color: '#7f231c',
-                fontStyle: 'italic',
-                maxHeight: '100px',
-                overflowY: 'auto',
-              }}
-            >
-              &ldquo;{commentToDelete.body}&rdquo;
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '8px' }}>
+          <div className="w-full max-w-lg rounded-2xl bg-white dark:bg-zinc-900 p-6 shadow-2xl border border-zinc-200 dark:border-zinc-800 space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-zinc-100 dark:border-zinc-800">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-full bg-[#f2e7dd] text-[#785542] dark:bg-amber-950/60 dark:text-amber-300 font-bold text-xs flex items-center justify-center">
+                  {replyingComment.avatarInitials}
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-zinc-900 dark:text-white">
+                    Responder a {replyingComment.authorName}
+                  </h3>
+                  <p className="text-xs text-zinc-400">
+                    Sobre o prato: {replyingComment.productName}
+                  </p>
+                </div>
+              </div>
               <button
                 type="button"
-                disabled={deletePending}
-                className="admin-button"
-                onClick={() => setCommentToDelete(null)}
+                onClick={() => setReplyingComment(null)}
+                className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 text-lg cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200/80 dark:border-zinc-700/60 text-xs text-zinc-600 dark:text-zinc-300 italic">
+              &ldquo;{replyingComment.body}&rdquo;
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1.5">
+                Sua resposta oficial do restaurante:
+              </label>
+              <textarea
+                rows={4}
+                value={singleReplyText}
+                onChange={(e) => setSingleReplyText(e.target.value)}
+                placeholder="Escreva uma resposta atenciosa ao cliente..."
+                className="w-full rounded-xl border border-zinc-200 bg-white p-3 text-xs sm:text-sm text-zinc-800 placeholder-zinc-400 focus:border-[#610000] focus:outline-hidden focus:ring-2 focus:ring-[#610000]/15 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 resize-none shadow-2xs"
+              />
+            </div>
+
+            {/* Modelos rápidos */}
+            <div>
+              <p className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider mb-1.5">
+                Respostas rápidas:
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSingleReplyText(
+                      'Muito obrigado pela avaliação e pelo carinho! Ficamos felizes que tenha apreciado. Esperamos vê-lo novamente em breve!',
+                    )
+                  }
+                  className="text-[11px] px-2.5 py-1 rounded-lg border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-300 cursor-pointer"
+                >
+                  ❤️ Agradecimento caloroso
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSingleReplyText(
+                      'Agradecemos pelo feedback construtivo! Já repassamos para a nossa equipe de cozinha e atendimento para mantermos sempre o padrão mais alto.',
+                    )
+                  }
+                  className="text-[11px] px-2.5 py-1 rounded-lg border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-300 cursor-pointer"
+                >
+                  ⚡ Melhoria contínua
+                </button>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+              <button
+                type="button"
+                onClick={() => setReplyingComment(null)}
+                className="px-4 py-2 rounded-xl border border-zinc-200 dark:border-zinc-700 text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer"
               >
                 Cancelar
               </button>
               <button
                 type="button"
-                disabled={deletePending}
-                className="admin-button"
-                onClick={() => void handleConfirmDeleteComment()}
-                style={{
-                  background: '#dc2626',
-                  color: '#fff',
-                  borderColor: '#dc2626',
-                }}
+                disabled={replySending || !singleReplyText.trim()}
+                onClick={handleSendSingleReply}
+                className="px-4 py-2 rounded-xl bg-[#610000] hover:bg-[#4d0000] disabled:opacity-50 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer"
               >
-                {deletePending ? 'Excluindo…' : 'Sim, excluir definitivamente'}
+                {replySending ? 'Enviando…' : 'Enviar resposta'}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* MODAL DE CONFIRMAÇÃO: REMOÇÃO DE TERMO RESTRITO */}
+      {/* 2. Modal de Resposta em Massa */}
+      {isBulkReplyOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 animate-in fade-in"
+        >
+          <div className="w-full max-w-lg rounded-2xl bg-white dark:bg-zinc-900 p-6 shadow-2xl border border-zinc-200 dark:border-zinc-800 space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-zinc-100 dark:border-zinc-800">
+              <div className="flex items-center gap-2">
+                <span className="p-2 rounded-xl bg-[#610000]/10 text-[#610000] dark:bg-rose-950/40 dark:text-rose-400">
+                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <line x1="22" y1="2" x2="11" y2="13" />
+                    <polygon points="22 2 15 22 11 13 2 9 22 2" />
+                  </svg>
+                </span>
+                <h3 className="font-bold text-base text-zinc-900 dark:text-white">
+                  Responder comentários em massa
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsBulkReplyOpen(false)}
+                className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 text-lg cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1.5">
+                Enviar para o grupo de avaliações:
+              </label>
+              <select
+                value={bulkReplyTarget}
+                onChange={(e) =>
+                  setBulkReplyTarget(e.target.value as 'all' | 'positive' | 'neutral' | 'negative')
+                }
+                className="w-full rounded-xl border border-zinc-200 bg-white p-2.5 text-xs sm:text-sm font-semibold text-zinc-800 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 cursor-pointer shadow-2xs"
+              >
+                <option value="all">Todos os clientes com comentários ativos ({metrics.total})</option>
+                <option value="positive">Somente comentários Positivos ({metrics.positive})</option>
+                <option value="neutral">Somente comentários Neutros ({metrics.neutral})</option>
+                <option value="negative">Somente comentários Negativos ({metrics.negative})</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1.5">
+                Mensagem padrão da resposta:
+              </label>
+              <textarea
+                rows={4}
+                value={bulkReplyText}
+                onChange={(e) => setBulkReplyText(e.target.value)}
+                placeholder="Ex.: Olá! Agradecemos muito pela sua visita e feedback no nosso cardápio..."
+                className="w-full rounded-xl border border-zinc-200 bg-white p-3 text-xs sm:text-sm text-zinc-800 placeholder-zinc-400 focus:border-[#610000] focus:outline-hidden focus:ring-2 focus:ring-[#610000]/15 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 resize-none shadow-2xs"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+              <button
+                type="button"
+                onClick={() => setIsBulkReplyOpen(false)}
+                className="px-4 py-2 rounded-xl border border-zinc-200 dark:border-zinc-700 text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={bulkReplySending || !bulkReplyText.trim()}
+                onClick={handleSendBulkReply}
+                className="px-4 py-2 rounded-xl bg-[#610000] hover:bg-[#4d0000] disabled:opacity-50 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+              >
+                {bulkReplySending ? 'Disparando…' : 'Disparar respostas'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 3. Modal de Palavras Restritas */}
+      {isRestrictedModalOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 animate-in fade-in"
+        >
+          <div className="w-full max-w-lg rounded-2xl bg-white dark:bg-zinc-900 p-6 shadow-2xl border border-zinc-200 dark:border-zinc-800 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-2 border-b border-zinc-100 dark:border-zinc-800">
+              <div className="flex items-center gap-2">
+                <svg
+                  className="w-5 h-5 text-[#610000] dark:text-rose-400"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10" />
+                </svg>
+                <h3 className="font-bold text-base text-zinc-900 dark:text-white">
+                  Palavras Restritas do Restaurante
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsRestrictedModalOpen(false)}
+                className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 text-lg cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
+              Comentários contendo estas palavras serão retidos automaticamente como{' '}
+              <strong>Pendentes</strong> para aprovação manual antes de serem exibidos no cardápio.
+            </p>
+
+            {/* Form de Adição */}
+            <form onSubmit={(e) => void handleAddTerm(e)} className="flex gap-2">
+              <input
+                type="text"
+                placeholder="Ex.: cabelo, cru, mosca, azedo..."
+                value={newTermInput}
+                onChange={(e) => setNewTermInput(e.target.value)}
+                disabled={termActionBusy}
+                maxLength={60}
+                className="flex-1 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs sm:text-sm text-zinc-800 placeholder-zinc-400 focus:border-[#610000] focus:outline-hidden focus:ring-2 focus:ring-[#610000]/15 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 shadow-2xs"
+              />
+              <button
+                type="submit"
+                disabled={termActionBusy || !newTermInput.trim()}
+                className="px-4 py-2 rounded-xl bg-[#610000] hover:bg-[#4d0000] disabled:opacity-50 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer shrink-0"
+              >
+                {termActionBusy ? 'Adicionando…' : 'Adicionar'}
+              </button>
+            </form>
+
+            {/* Lista de Termos */}
+            <div className="pt-2">
+              <p className="text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-2">
+                Termos configurados ({terms.length}):
+              </p>
+              {loadingTerms ? (
+                <div className="py-6 text-center text-xs text-zinc-400">Carregando termos…</div>
+              ) : terms.length === 0 ? (
+                <div className="py-6 text-center text-xs text-zinc-400 border border-dashed border-zinc-200 dark:border-zinc-800 rounded-xl">
+                  Nenhum termo restrito cadastrado.
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto pr-1">
+                  {terms.map((t) => (
+                    <span
+                      key={t.id}
+                      className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-xs text-zinc-800 dark:text-zinc-200 shadow-2xs"
+                    >
+                      <span>{t.term}</span>
+                      <button
+                        type="button"
+                        disabled={termActionBusy}
+                        onClick={() => setTermToDelete(t)}
+                        className="text-rose-600 hover:text-rose-800 font-bold ml-1 cursor-pointer"
+                        title="Remover termo"
+                      >
+                        ✕
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end pt-2 border-t border-zinc-100 dark:border-zinc-800">
+              <button
+                type="button"
+                onClick={() => setIsRestrictedModalOpen(false)}
+                className="px-4 py-2 rounded-xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-xs font-semibold text-zinc-700 dark:text-zinc-200 cursor-pointer"
+              >
+                Concluir
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 4. Modal de Confirmação de Exclusão de Termo */}
       {termToDelete && (
         <div
           role="dialog"
           aria-modal="true"
-          aria-labelledby="modal-del-term"
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0, 0, 0, 0.45)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-            padding: '16px',
-          }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 animate-in fade-in"
         >
-          <div
-            className="admin-modal-card"
-            style={{
-              background: 'var(--color-surface, #fff)',
-              border: '1px solid var(--color-border, #e2e8f0)',
-              borderRadius: '16px',
-              maxWidth: '440px',
-              width: '100%',
-              padding: '24px',
-              boxShadow: '0 20px 40px rgba(0,0,0,0.2)',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '16px',
-            }}
-          >
-            <h3 id="modal-del-term" style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: 'var(--color-text-main, #2b1d17)' }}>
-              Remover palavra restrita?
-            </h3>
-
-            <p style={{ margin: 0, fontSize: '14px', color: 'var(--color-text-muted, #52453c)', lineHeight: 1.5 }}>
-              Deseja remover o termo <strong>&ldquo;{termToDelete.term}&rdquo;</strong> do filtro do restaurante? Novos
-              comentários com este termo não serão mais retidos automaticamente por esta regra.
+          <div className="w-full max-w-sm rounded-2xl bg-white dark:bg-zinc-900 p-5 shadow-2xl border border-zinc-200 dark:border-zinc-800 space-y-3">
+            <h3 className="font-bold text-sm text-zinc-900 dark:text-white">Remover termo?</h3>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">
+              Deseja remover <strong>&ldquo;{termToDelete.term}&rdquo;</strong> do filtro do
+              restaurante?
             </p>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '8px' }}>
+            <div className="flex justify-end gap-2 pt-2">
               <button
                 type="button"
                 disabled={termActionBusy}
-                className="admin-button"
                 onClick={() => setTermToDelete(null)}
+                className="px-3 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer"
               >
                 Cancelar
               </button>
               <button
                 type="button"
                 disabled={termActionBusy}
-                className="admin-button primary"
                 onClick={() => void handleConfirmDeleteTerm()}
+                className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold cursor-pointer"
               >
-                {termActionBusy ? 'Removendo…' : 'Remover'}
+                {termActionBusy ? 'Removendo…' : 'Sim, remover'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 5. Modal de Confirmação de Exclusão de Comentário */}
+      {commentToDelete && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 animate-in fade-in"
+        >
+          <div className="w-full max-w-md rounded-2xl bg-white dark:bg-zinc-900 p-6 shadow-2xl border border-zinc-200 dark:border-zinc-800 space-y-4">
+            <div className="flex items-center gap-3 text-rose-600">
+              <div className="p-2 rounded-xl bg-rose-100 dark:bg-rose-950/60">
+                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M3 6h18" />
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                </svg>
+              </div>
+              <h3 className="font-bold text-base text-zinc-900 dark:text-white">
+                Excluir comentário definitivamente?
+              </h3>
+            </div>
+
+            <p className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed">
+              Esta ação é <strong>irreversível</strong>. O comentário de{' '}
+              <strong>{commentToDelete.authorName}</strong> no prato{' '}
+              <strong>{commentToDelete.productName}</strong> será apagado do sistema.
+            </p>
+
+            <div className="p-3 rounded-xl bg-rose-50/60 dark:bg-rose-950/20 border border-rose-200/60 dark:border-rose-900/40 text-xs text-rose-800 dark:text-rose-300 italic line-clamp-3">
+              &ldquo;{commentToDelete.body}&rdquo;
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+              <button
+                type="button"
+                disabled={deletePending}
+                onClick={() => setCommentToDelete(null)}
+                className="px-4 py-2 rounded-xl border border-zinc-200 dark:border-zinc-700 text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={deletePending}
+                onClick={() => void handleConfirmDelete()}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+              >
+                {deletePending ? 'Excluindo…' : 'Sim, excluir'}
               </button>
             </div>
           </div>

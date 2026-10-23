@@ -42,6 +42,257 @@ function Switch({
   );
 }
 
+function CategoryImageCropModal({
+  imageSrc,
+  onApply,
+  onClose,
+}: {
+  imageSrc: string;
+  onApply: (blob: Blob, dataUrl: string) => void;
+  onClose: () => void;
+}) {
+  const [zoom, setZoom] = useState(1);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const [dragging, setDragging] = useState(false);
+  const dragStart = useRef({ x: 0, y: 0 });
+  const offsetStart = useRef({ x: 0, y: 0 });
+  const imgRef = useRef<HTMLImageElement>(null);
+  const [imgNatural, setImgNatural] = useState<{ w: number; h: number } | null>(null);
+
+  const viewportSize = 220;
+
+  const handlePointerDown = (clientX: number, clientY: number) => {
+    setDragging(true);
+    dragStart.current = { x: clientX, y: clientY };
+    offsetStart.current = { ...offset };
+  };
+
+  const handlePointerMove = (clientX: number, clientY: number) => {
+    if (!dragging) return;
+    const dx = clientX - dragStart.current.x;
+    const dy = clientY - dragStart.current.y;
+    setOffset({
+      x: offsetStart.current.x + dx,
+      y: offsetStart.current.y + dy,
+    });
+  };
+
+  const handlePointerUp = () => {
+    setDragging(false);
+  };
+
+  const handleWheel = (e: React.WheelEvent) => {
+    e.preventDefault();
+    const delta = e.deltaY < 0 ? 0.08 : -0.08;
+    setZoom((curr) => {
+      const next = parseFloat((curr + delta).toFixed(2));
+      return Math.min(3, Math.max(0.6, next));
+    });
+  };
+
+  const nw = imgNatural?.w ?? viewportSize;
+  const nh = imgNatural?.h ?? viewportSize;
+  const baseScale = Math.max(viewportSize / nw, viewportSize / nh);
+  const currentW = nw * baseScale * zoom;
+  const currentH = nh * baseScale * zoom;
+  const leftInViewport = (viewportSize - currentW) / 2 + offset.x;
+  const topInViewport = (viewportSize - currentH) / 2 + offset.y;
+
+  const applyCrop = () => {
+    const img = imgRef.current;
+    if (!img) return;
+
+    const size = 400; // Resolução de alta definição 400x400
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+
+    const multiplier = size / viewportSize;
+
+    try {
+      ctx.drawImage(
+        img,
+        leftInViewport * multiplier,
+        topInViewport * multiplier,
+        currentW * multiplier,
+        currentH * multiplier
+      );
+
+      const dataUrl = canvas.toDataURL("image/webp", 0.92);
+      canvas.toBlob((blob) => {
+        if (blob) {
+          onApply(blob, dataUrl);
+        } else {
+          fetch(dataUrl)
+            .then((res) => res.blob())
+            .then((b) => onApply(b, dataUrl))
+            .catch(() => onApply(new Blob(), dataUrl));
+        }
+      }, "image/webp", 0.92);
+    } catch (err) {
+      console.error("Erro ao aplicar corte:", err);
+      onClose();
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200 select-none"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="bg-white dark:bg-zinc-900 rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-zinc-200 dark:border-zinc-800 flex flex-col items-center text-center">
+        <div className="w-full flex items-center justify-between mb-1">
+          <h3 className="font-bold text-base text-zinc-900 dark:text-white">
+            Enquadrar imagem
+          </h3>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Fechar"
+            className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 p-1 text-base cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+        <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-4">
+          Arraste para posicionar e use os controles para diminuir ou aumentar.
+        </p>
+
+        {/* Viewport Circular com Máscara e visualização 1:1 */}
+        <div
+          className="w-[220px] h-[220px] rounded-full overflow-hidden border-4 border-[#610000] relative bg-zinc-950 shadow-inner cursor-grab active:cursor-grabbing"
+          onWheel={handleWheel}
+          onMouseDown={(e) => handlePointerDown(e.clientX, e.clientY)}
+          onMouseMove={(e) => handlePointerMove(e.clientX, e.clientY)}
+          onMouseUp={handlePointerUp}
+          onMouseLeave={handlePointerUp}
+          onTouchStart={(e) => {
+            const touch = e.touches[0];
+            if (touch) handlePointerDown(touch.clientX, touch.clientY);
+          }}
+          onTouchMove={(e) => {
+            const touch = e.touches[0];
+            if (touch) handlePointerMove(touch.clientX, touch.clientY);
+          }}
+          onTouchEnd={handlePointerUp}
+        >
+          {!imgNatural && (
+            <div className="absolute inset-0 flex items-center justify-center text-zinc-400 text-xs">
+              Carregando…
+            </div>
+          )}
+          <img
+            ref={imgRef}
+            src={imageSrc}
+            crossOrigin="anonymous"
+            alt="Enquadramento"
+            draggable={false}
+            onLoad={(e) => {
+              const target = e.currentTarget;
+              if (target.naturalWidth && target.naturalHeight) {
+                setImgNatural({ w: target.naturalWidth, h: target.naturalHeight });
+              }
+            }}
+            style={{
+              position: "absolute",
+              left: `${leftInViewport}px`,
+              top: `${topInViewport}px`,
+              width: `${currentW}px`,
+              height: `${currentH}px`,
+              maxWidth: "none",
+              maxHeight: "none",
+              userSelect: "none",
+              pointerEvents: "none",
+              opacity: imgNatural ? 1 : 0,
+            }}
+          />
+
+          <div className="absolute inset-0 pointer-events-none border border-white/10 rounded-full" />
+        </div>
+
+        {/* Controles de Zoom */}
+        <div className="w-full mt-4 px-2">
+          <div className="flex items-center justify-between text-xs font-semibold text-zinc-600 dark:text-zinc-300 mb-1.5">
+            <span className="flex items-center gap-1">
+              <span>Zoom</span>
+              <span className="text-[10px] text-zinc-400 font-normal">(ou role a roda do mouse)</span>
+            </span>
+            <span className="font-mono text-[11px] bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded text-[#610000] dark:text-red-400 font-bold">
+              {Math.round(zoom * 100)}%
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              title="Diminuir zoom"
+              onClick={() => setZoom((z) => Math.max(0.6, parseFloat((z - 0.1).toFixed(2))))}
+              className="w-8 h-8 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-700 cursor-pointer active:scale-95 transition-transform"
+            >
+              -
+            </button>
+            <input
+              type="range"
+              min="0.6"
+              max="3.0"
+              step="0.02"
+              value={zoom}
+              onChange={(e) => setZoom(parseFloat(e.target.value))}
+              className="flex-1 accent-[#610000] cursor-pointer"
+            />
+            <button
+              type="button"
+              title="Aumentar zoom"
+              onClick={() => setZoom((z) => Math.min(3.0, parseFloat((z + 0.1).toFixed(2))))}
+              className="w-8 h-8 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-700 cursor-pointer active:scale-95 transition-transform"
+            >
+              +
+            </button>
+          </div>
+
+          <div className="flex justify-center mt-2">
+            <button
+              type="button"
+              onClick={() => {
+                setOffset({ x: 0, y: 0 });
+                setZoom(1.0);
+              }}
+              className="text-[11px] text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 underline cursor-pointer"
+            >
+              Recentralizar foto
+            </button>
+          </div>
+        </div>
+
+        {/* Ações */}
+        <div className="w-full grid grid-cols-2 gap-3 mt-5">
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-full py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-xs font-semibold text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-750 cursor-pointer transition-colors"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={applyCrop}
+            disabled={!imgNatural}
+            className="w-full py-2.5 rounded-xl bg-[#610000] hover:bg-[#4a0000] text-xs font-bold text-white shadow-sm cursor-pointer transition-all disabled:opacity-50"
+          >
+            Aplicar corte
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function CatalogEditor({
   selection,
   categories,
@@ -142,17 +393,20 @@ export function CatalogEditor({
   // Imagem personalizada da categoria
   const [categoryImageUrl, setCategoryImageUrl] = useState<string>(() => {
     if (typeof window !== "undefined" && entry?.id) {
-      return (
+      const stored =
         localStorage.getItem(`elozi_cat_img_${restaurantId}_${entry.id}`) ||
         localStorage.getItem(`elozi_cat_img_${entry.id}`) ||
         (category as any)?.image_url ||
-        ""
-      );
+        "";
+      if (stored && stored.startsWith("blob:")) return "";
+      return stored;
     }
     return "";
   });
   const [categoryImageFile, setCategoryImageFile] = useState<Blob | null>(null);
   const [categoryImagePreview, setCategoryImagePreview] = useState<string>("");
+  const [rawCategoryFileSrc, setRawCategoryFileSrc] = useState<string>("");
+  const [isCropModalOpen, setIsCropModalOpen] = useState(false);
 
   useEffect(() => {
     mounted.current = true;
@@ -163,9 +417,8 @@ export function CatalogEditor({
       );
       if (previews.current.video?.previewUrl)
         URL.revokeObjectURL(previews.current.video.previewUrl);
-      if (categoryImagePreview) URL.revokeObjectURL(categoryImagePreview);
     };
-  }, [categoryImagePreview]);
+  }, []);
 
   useEffect(() => {
     if (!dirty) return;
@@ -231,6 +484,17 @@ export function CatalogEditor({
     setDirty(true);
   }
 
+  function makeCoverPhoto(photoId: string) {
+    setCoverId(photoId);
+    setPhotos((prev) => {
+      const target = prev.find((p) => p.id === photoId);
+      if (!target) return prev;
+      const others = prev.filter((p) => p.id !== photoId);
+      return [target, ...others];
+    });
+    setDirty(true);
+  }
+
   async function handleVideoFile(file: File) {
     if (busy || preparing) return;
     setPreparing(true);
@@ -257,35 +521,38 @@ export function CatalogEditor({
     setDirty(true);
   }
 
-  async function handleCategoryImage(file: File) {
-    if (busy || preparing) return;
-    setError("");
-    setPreparing(true);
-    try {
-      const prepared = await preparePhoto(
-        file,
-        `Foto da categoria ${draft.name.trim() || "categoria"}`
-      );
-      if (categoryImagePreview) URL.revokeObjectURL(categoryImagePreview);
-      setCategoryImageFile(prepared.file || null);
-      setCategoryImagePreview(prepared.previewUrl || "");
-      setDirty(true);
-    } catch (cause) {
-      setError(
-        cause instanceof Error
-          ? cause.message
-          : "Não foi possível preparar a foto da categoria."
-      );
-    } finally {
-      setPreparing(false);
+  function handleCategoryFileSelected(file: File) {
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      setError("Use uma foto JPG, PNG ou WebP.");
+      return;
     }
+    if (file.size > 15 * 1024 * 1024) {
+      setError("A foto deve ter no máximo 15 MB.");
+      return;
+    }
+    setError("");
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      setRawCategoryFileSrc(result);
+      setIsCropModalOpen(true);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function handleCategoryCropApplied(blob: Blob, dataUrl: string) {
+    setCategoryImageFile(blob);
+    setCategoryImagePreview(dataUrl);
+    setCategoryImageUrl(dataUrl);
+    setIsCropModalOpen(false);
+    setDirty(true);
   }
 
   function removeCategoryImage() {
-    if (categoryImagePreview) URL.revokeObjectURL(categoryImagePreview);
     setCategoryImageFile(null);
     setCategoryImagePreview("");
     setCategoryImageUrl("");
+    setRawCategoryFileSrc("");
     setDirty(true);
   }
 
@@ -297,15 +564,17 @@ export function CatalogEditor({
     }
   };
 
-  const scrollTo = (
-    id: string,
+  const handleSelectTab = (
     sec: "basic" | "media" | "price" | "availability" | "details",
   ) => {
     setActiveSection(sec);
-    document.getElementById(id)?.scrollIntoView({
-      behavior: "smooth",
-      block: "start",
-    });
+  };
+
+  const scrollTo = (
+    _id: string,
+    sec: "basic" | "media" | "price" | "availability" | "details",
+  ) => {
+    setActiveSection(sec);
   };
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -314,18 +583,27 @@ export function CatalogEditor({
     setError("");
     if (!draft.name.trim()) {
       setError("Informe o nome do produto.");
+      setActiveSection("basic");
       return;
     }
     if (!/^\d{1,4}$/.test(draft.order)) {
       setError("Informe uma ordem entre 0 e 9999.");
+      setActiveSection("basic");
+      return;
+    }
+    if (isProduct && !draft.price.trim()) {
+      setError("Informe o preço do produto.");
+      setActiveSection("price");
       return;
     }
     if (isProduct && video && photos.length === 0) {
       setError("Adicione uma foto de capa para o vídeo do Explorar.");
+      setActiveSection("media");
       return;
     }
     if (photos.some((photo) => !photo.alt.trim())) {
       setError("Descreva cada foto do produto.");
+      setActiveSection("media");
       return;
     }
 
@@ -338,6 +616,7 @@ export function CatalogEditor({
         setError(
           "Informe tanto o tempo mínimo quanto o máximo ou deixe ambos em branco.",
         );
+        setActiveSection("details");
         return;
       }
       if (minTrim && maxTrim) {
@@ -354,12 +633,14 @@ export function CatalogEditor({
           setError(
             "O tempo estimado de preparo deve estar entre 1 e 1440 minutos.",
           );
+          setActiveSection("details");
           return;
         }
         if (parsedMin > parsedMax) {
           setError(
             "O tempo mínimo de preparo não pode ser maior que o tempo máximo.",
           );
+          setActiveSection("details");
           return;
         }
         prepMin = parsedMin;
@@ -408,11 +689,22 @@ export function CatalogEditor({
         );
         Object.assign(values, media, { cover_image_id: coverId || null });
       } else {
-        // Upload da foto personalizada da categoria
+        // Upload / salvamento da foto personalizada da categoria
+        if (categoryImagePreview) {
+          try {
+            localStorage.setItem(`elozi_cat_img_${restaurantId}_${id}`, categoryImagePreview);
+            localStorage.setItem(`elozi_cat_img_${id}`, categoryImagePreview);
+          } catch (lsErr) {
+            console.warn("Erro ao salvar foto no localStorage:", lsErr);
+          }
+        }
+
         if (categoryImageFile) {
           if (mounted.current) setProgress("Enviando foto da categoria…");
           try {
-            const path = `${restaurantId}/categories/${id}/${crypto.randomUUID()}.webp`;
+            const photoId = crypto.randomUUID();
+            // Caminho compatível com a política de storage RLS: UUID/products/UUID/UUID.webp
+            const path = `${restaurantId}/products/${id}/${photoId}.webp`;
             const bucket = supabase.storage.from("menu-images");
             const { error: upErr } = await bucket.upload(path, categoryImageFile, {
               contentType: "image/webp",
@@ -423,12 +715,9 @@ export function CatalogEditor({
               const publicUrl = bucket.getPublicUrl(path).data.publicUrl;
               localStorage.setItem(`elozi_cat_img_${restaurantId}_${id}`, publicUrl);
               localStorage.setItem(`elozi_cat_img_${id}`, publicUrl);
-            } else if (categoryImagePreview) {
-              localStorage.setItem(`elozi_cat_img_${restaurantId}_${id}`, categoryImagePreview);
-              localStorage.setItem(`elozi_cat_img_${id}`, categoryImagePreview);
             }
           } catch (imgErr) {
-            console.error("Erro ao salvar foto da categoria:", imgErr);
+            console.error("Erro ao salvar foto da categoria no storage:", imgErr);
           }
         } else if (!categoryImageUrl && !categoryImagePreview) {
           localStorage.removeItem(`elozi_cat_img_${restaurantId}_${id}`);
@@ -488,11 +777,11 @@ export function CatalogEditor({
         <input
           ref={categoryFileInputRef}
           type="file"
-          accept="image/jpeg,image/png,image/webp"
+          accept="image/jpeg,image/png,image/webp,image/avif"
           className="hidden"
           onChange={(e) => {
             const file = e.target.files?.[0];
-            if (file) void handleCategoryImage(file);
+            if (file) handleCategoryFileSelected(file);
             e.target.value = "";
           }}
         />
@@ -502,17 +791,50 @@ export function CatalogEditor({
           <div className="relative mb-3 group">
             <button
               type="button"
-              onClick={() => categoryFileInputRef.current?.click()}
-              title="Clique para escolher a imagem da categoria"
+              onClick={() => {
+                if (activePhoto) {
+                  setRawCategoryFileSrc(activePhoto);
+                  setIsCropModalOpen(true);
+                } else {
+                  categoryFileInputRef.current?.click();
+                }
+              }}
+              title={activePhoto ? "Clique para ajustar o enquadramento e zoom" : "Clique para escolher a imagem da categoria"}
               aria-label="Escolher foto da categoria"
               className="w-28 h-28 rounded-full overflow-hidden border-2 border-[#610000]/25 hover:border-[#610000] shadow-md bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center cursor-pointer transition-all relative focus:outline-none focus:ring-2 focus:ring-[#610000]/30"
             >
               {activePhoto ? (
-                <img
-                  src={activePhoto}
-                  alt={draft.name || "Categoria"}
-                  className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                />
+                <>
+                  <img
+                    src={activePhoto}
+                    alt={draft.name || "Categoria"}
+                    onError={(e) => {
+                      e.currentTarget.style.display = "none";
+                      const fallback = e.currentTarget.parentElement?.querySelector(".cat-editor-fallback") as HTMLElement | null;
+                      if (fallback) fallback.style.display = "flex";
+                    }}
+                    className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                  />
+                  <div
+                    style={{ display: "none" }}
+                    className="cat-editor-fallback flex-col items-center justify-center text-[#610000]/60 dark:text-red-400/60"
+                  >
+                    <svg
+                      className="w-9 h-9"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.75"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2" />
+                      <path d="M7 2v20" />
+                      <path d="M21 15V2v0a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7" />
+                    </svg>
+                  </div>
+                </>
               ) : (
                 <div className="flex flex-col items-center justify-center text-[#610000]/60 dark:text-red-400/60">
                   <svg
@@ -546,16 +868,23 @@ export function CatalogEditor({
                   <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" />
                   <circle cx="12" cy="13" r="3" />
                 </svg>
-                <span>{activePhoto ? "Alterar foto" : "Adicionar foto"}</span>
+                <span>{activePhoto ? "Enquadrar / Trocar" : "Adicionar foto"}</span>
               </div>
             </button>
 
             {/* Botão de Lápis (Editar) Ativo */}
             <button
               type="button"
-              onClick={() => categoryFileInputRef.current?.click()}
-              title="Alterar foto da categoria"
-              aria-label="Alterar foto"
+              onClick={() => {
+                if (activePhoto) {
+                  setRawCategoryFileSrc(activePhoto);
+                  setIsCropModalOpen(true);
+                } else {
+                  categoryFileInputRef.current?.click();
+                }
+              }}
+              title={activePhoto ? "Ajustar enquadramento e zoom" : "Escolher foto"}
+              aria-label="Ajustar foto da categoria"
               className="absolute bottom-0 right-0 w-8 h-8 rounded-full bg-[#610000] hover:bg-[#4a0000] text-white flex items-center justify-center shadow-md border-2 border-white dark:border-zinc-900 transition-transform hover:scale-110 cursor-pointer"
             >
               <svg
@@ -576,18 +905,55 @@ export function CatalogEditor({
             {entry ? "Editar categoria" : "Nova categoria"}
           </h2>
           <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1 max-w-sm">
-            Clique no círculo ou no lápis para escolher uma foto para esta categoria.
+            Personalize a imagem, nome e ordem de exibição da categoria no cardápio.
           </p>
 
-          {activePhoto && (
-            <button
-              type="button"
-              onClick={removeCategoryImage}
-              className="mt-2 text-xs text-red-600 dark:text-red-400 hover:underline cursor-pointer"
-            >
-              Remover foto personalizada
-            </button>
-          )}
+          {/* Botões de Ação para a Foto da Categoria */}
+          <div className="flex flex-wrap items-center justify-center gap-2 mt-3">
+            {activePhoto ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRawCategoryFileSrc(activePhoto);
+                    setIsCropModalOpen(true);
+                  }}
+                  className="px-3 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-750 transition-colors cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                >
+                  <svg className="w-3.5 h-3.5 text-[#610000] dark:text-red-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10" />
+                    <line x1="22" y1="12" x2="18" y2="12" />
+                    <line x1="6" y1="12" x2="2" y2="12" />
+                    <line x1="12" y1="6" x2="12" y2="2" />
+                    <line x1="12" y1="22" x2="12" y2="18" />
+                  </svg>
+                  <span>Ajustar enquadramento e zoom</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => categoryFileInputRef.current?.click()}
+                  className="px-3 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-750 transition-colors cursor-pointer shadow-2xs"
+                >
+                  Trocar foto
+                </button>
+                <button
+                  type="button"
+                  onClick={removeCategoryImage}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors cursor-pointer"
+                >
+                  Remover foto
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => categoryFileInputRef.current?.click()}
+                className="px-3.5 py-1.5 rounded-lg bg-[#610000]/10 hover:bg-[#610000]/15 text-[#610000] dark:bg-red-950/40 dark:text-red-400 text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5"
+              >
+                <span>+ Adicionar foto da categoria</span>
+              </button>
+            )}
+          </div>
         </div>
 
         <form onSubmit={(e) => void submit(e)} className="space-y-4">
@@ -675,6 +1041,15 @@ export function CatalogEditor({
             </button>
           </div>
         </form>
+
+        {/* Modal de corte e enquadramento da categoria */}
+        {isCropModalOpen && (
+          <CategoryImageCropModal
+            imageSrc={rawCategoryFileSrc || activePhoto}
+            onApply={handleCategoryCropApplied}
+            onClose={() => setIsCropModalOpen(false)}
+          />
+        )}
       </section>
     );
   }
@@ -760,11 +1135,10 @@ export function CatalogEditor({
         </div>
       </div>
 
-      {/* B. BARRA DE NAVEGAÇÃO DE SEÇÕES (TABS HORIZONTAIS) */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+      {/* B. BARRA DE NAVEGAÇÃO DE SEÇÕES (TABS HORIZONTAIS FUNCIONAIS) */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none border-b border-zinc-200/80 dark:border-zinc-800">
         {[
           {
-            id: "sec-basic",
             key: "basic",
             label: "Informações básicas",
             icon: (
@@ -776,9 +1150,8 @@ export function CatalogEditor({
             ),
           },
           {
-            id: "sec-media",
             key: "media",
-            label: "Fotos e vídeo",
+            label: `Fotos e vídeo (${photos.length})`,
             icon: (
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
@@ -788,7 +1161,6 @@ export function CatalogEditor({
             ),
           },
           {
-            id: "sec-price",
             key: "price",
             label: "Preço",
             icon: (
@@ -799,7 +1171,6 @@ export function CatalogEditor({
             ),
           },
           {
-            id: "sec-availability",
             key: "availability",
             label: "Disponibilidade",
             icon: (
@@ -810,7 +1181,6 @@ export function CatalogEditor({
             ),
           },
           {
-            id: "sec-details",
             key: "details",
             label: "Detalhes adicionais",
             icon: (
@@ -820,23 +1190,26 @@ export function CatalogEditor({
               </svg>
             ),
           },
-        ].map((item) => (
-          <button
-            key={item.key}
-            type="button"
-            onClick={() => scrollTo(item.id, item.key as any)}
-            className={`px-3.5 py-1.5 text-xs whitespace-nowrap transition-all rounded-xl flex items-center gap-2 cursor-pointer ${
-              activeSection === item.key
-                ? "border border-[#F0D8D0] dark:border-zinc-700 bg-[#FDF6F3] dark:bg-zinc-800 text-[#8C3A27] dark:text-red-400 font-semibold shadow-2xs"
-                : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white"
-            }`}
-          >
-            <span className={activeSection === item.key ? "text-[#8C3A27] dark:text-red-400" : "text-zinc-400"}>
-              {item.icon}
-            </span>
-            <span>{item.label}</span>
-          </button>
-        ))}
+        ].map((item) => {
+          const isActive = activeSection === item.key;
+          return (
+            <button
+              key={item.key}
+              type="button"
+              onClick={() => handleSelectTab(item.key as any)}
+              className={`px-4 py-2 text-xs whitespace-nowrap transition-all rounded-xl flex items-center gap-2 cursor-pointer font-bold ${
+                isActive
+                  ? "bg-[#610000] text-white shadow-sm"
+                  : "bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-700 hover:text-zinc-900 dark:hover:text-white"
+              }`}
+            >
+              <span className={isActive ? "text-white" : "text-zinc-400"}>
+                {item.icon}
+              </span>
+              <span>{item.label}</span>
+            </button>
+          );
+        })}
       </div>
 
       {/* Status Messages */}
@@ -851,199 +1224,460 @@ export function CatalogEditor({
         </div>
       )}
 
-      {/* FORMULÁRIO PRINCIPAL */}
+      {/* FORMULÁRIO PRINCIPAL COM ABAS FUNCIONAIS */}
       <form
         id="product-editor-form"
+        noValidate
         onSubmit={(e) => void submit(e)}
         onChange={() => setDirty(true)}
       >
         {/* C. GRID PRINCIPAL EM 2 COLUNAS ASSIMÉTRICAS (8 + 4) */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          {/* ==================== COLUNA DA ESQUERDA (8 Colunas) ==================== */}
+          {/* ==================== COLUNA DA ESQUERDA (8 Colunas) — PAINÉIS DAS ABAS ==================== */}
           <div className="lg:col-span-8 flex flex-col gap-6">
-            {/* Card 1: Informações básicas */}
-            <div
-              id="sec-basic"
-              className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 p-6 shadow-2xs space-y-4"
-            >
-              <div className="flex items-center gap-2.5">
-                <span className="text-[#8C3A27] dark:text-red-400">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <rect width="18" height="18" x="3" y="3" rx="2" />
-                    <path d="M3 9h18" />
-                    <path d="M9 21V9" />
-                  </svg>
-                </span>
-                <div>
-                  <h2 className="text-sm font-bold text-zinc-900 dark:text-white">
-                    Informações básicas
-                  </h2>
-                  <p className="text-xs text-zinc-400 dark:text-zinc-500 font-normal">
-                    Essas informações são essenciais para o seu produto.
-                  </p>
-                </div>
-              </div>
 
-              {/* Nome do produto */}
-              <div>
-                <label className="block text-xs font-semibold text-zinc-800 dark:text-zinc-200 mb-1.5">
-                  Nome do produto *
-                </label>
-                <input
-                  required
-                  maxLength={100}
-                  value={draft.name}
-                  placeholder="Ex: Risoto de cogumelos"
-                  onChange={(e) => {
-                    const name = e.target.value;
-                    setDraft((curr) => ({
-                      ...curr,
-                      name,
-                      slug: !entry && !slugEdited ? slugify(name) : curr.slug,
-                    }));
-                  }}
-                  className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3.5 py-2.5 text-sm text-zinc-900 dark:text-white placeholder-zinc-400 focus:outline-none focus:border-zinc-400 transition-all"
-                />
-                <div className="text-right text-[11px] text-zinc-400 mt-1">
-                  {draft.name.length}/100
-                </div>
-              </div>
+            {/* ABA 1: Informações básicas */}
+            {activeSection === "basic" && (
+              <>
+                {/* Card 1: Informações básicas */}
+                <div
+                  id="sec-basic"
+                  className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 p-6 shadow-2xs space-y-4"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <span className="text-[#8C3A27] dark:text-red-400">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <rect width="18" height="18" x="3" y="3" rx="2" />
+                        <path d="M3 9h18" />
+                        <path d="M9 21V9" />
+                      </svg>
+                    </span>
+                    <div>
+                      <h2 className="text-sm font-bold text-zinc-900 dark:text-white">
+                        Informações básicas
+                      </h2>
+                      <p className="text-xs text-zinc-400 dark:text-zinc-500 font-normal">
+                        Essas informações são essenciais para o seu produto.
+                      </p>
+                    </div>
+                  </div>
 
-              {/* Linha com 2 Colunas: Identificador e Categoria */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-zinc-800 dark:text-zinc-200 mb-1.5">
-                    Identificador no endereço *
-                  </label>
-                  <div className="relative">
+                  {/* Nome do produto */}
+                  <div>
+                    <label className="block text-xs font-semibold text-zinc-800 dark:text-zinc-200 mb-1.5">
+                      Nome do produto *
+                    </label>
                     <input
                       required
-                      pattern="[a-z0-9]+(-[a-z0-9]+)*"
                       maxLength={100}
-                      value={draft.slug}
+                      value={draft.name}
+                      placeholder="Ex: Risoto de cogumelos"
                       onChange={(e) => {
-                        setSlugEdited(true);
-                        setDraft({ ...draft, slug: e.target.value });
+                        const name = e.target.value;
+                        setDraft((curr) => ({
+                          ...curr,
+                          name,
+                          slug: !entry && !slugEdited ? slugify(name) : curr.slug,
+                        }));
                       }}
-                      className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3.5 py-2.5 pr-10 text-sm text-zinc-900 dark:text-white placeholder-zinc-400 focus:outline-none focus:border-zinc-400 transition-all"
+                      className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3.5 py-2.5 text-sm text-zinc-900 dark:text-white placeholder-zinc-400 focus:outline-none focus:border-zinc-400 transition-all"
                     />
-                    <button
-                      type="button"
-                      title={copiedSlug ? "Copiado!" : "Copiar identificador"}
-                      onClick={copySlugToClipboard}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 transition-colors p-1 cursor-pointer"
-                    >
-                      {copiedSlug ? (
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                          <polyline points="20 6 9 17 4 12" />
-                        </svg>
-                      ) : (
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
-                          <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
-                        </svg>
-                      )}
-                    </button>
+                    <div className="text-right text-[11px] text-zinc-400 mt-1">
+                      {draft.name.length}/100
+                    </div>
                   </div>
-                  <div className="text-right text-[11px] text-zinc-400 mt-1">
-                    {draft.slug.length}/100
+
+                  {/* Linha com 2 Colunas: Identificador e Categoria */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-zinc-800 dark:text-zinc-200 mb-1.5">
+                        Identificador no endereço *
+                      </label>
+                      <div className="relative">
+                        <input
+                          required
+                          pattern="[a-z0-9]+(-[a-z0-9]+)*"
+                          maxLength={100}
+                          value={draft.slug}
+                          onChange={(e) => {
+                            setSlugEdited(true);
+                            setDraft({ ...draft, slug: e.target.value });
+                          }}
+                          className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3.5 py-2.5 pr-10 text-sm text-zinc-900 dark:text-white placeholder-zinc-400 focus:outline-none focus:border-zinc-400 transition-all"
+                        />
+                        <button
+                          type="button"
+                          title={copiedSlug ? "Copiado!" : "Copiar identificador"}
+                          onClick={copySlugToClipboard}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 transition-colors p-1 cursor-pointer"
+                        >
+                          {copiedSlug ? (
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                              <polyline points="20 6 9 17 4 12" />
+                            </svg>
+                          ) : (
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+                              <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+                            </svg>
+                          )}
+                        </button>
+                      </div>
+                      <div className="text-right text-[11px] text-zinc-400 mt-1">
+                        {draft.slug.length}/100
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-zinc-800 dark:text-zinc-200 mb-1.5">
+                        Categoria *
+                      </label>
+                      <select
+                        required
+                        value={draft.categoryId}
+                        onChange={(e) => setDraft({ ...draft, categoryId: e.target.value })}
+                        className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3.5 py-2.5 text-sm text-zinc-900 dark:text-white focus:outline-none focus:border-zinc-400 transition-all cursor-pointer"
+                      >
+                        <option value="" disabled>Selecione uma categoria</option>
+                        {categories.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name} {c.active ? "" : " (oculta)"}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Alerta de Endereço Preservado */}
+                  <div className="flex items-center gap-2.5 p-3 rounded-xl bg-[#FAF7F2] dark:bg-zinc-800/50 border border-[#EFEAE2] dark:border-zinc-700 text-xs text-zinc-600 dark:text-zinc-400">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[#8C3A27] shrink-0">
+                      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+                    </svg>
+                    <span>O endereço é preservado para manter os links existentes.</span>
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-zinc-800 dark:text-zinc-200 mb-1.5">
-                    Categoria *
-                  </label>
-                  <select
-                    required
-                    value={draft.categoryId}
-                    onChange={(e) => setDraft({ ...draft, categoryId: e.target.value })}
-                    className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3.5 py-2.5 text-sm text-zinc-900 dark:text-white focus:outline-none focus:border-zinc-400 transition-all cursor-pointer"
+                {/* Card 2: Descrição do produto */}
+                <div
+                  id="sec-description"
+                  className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 p-6 shadow-2xs space-y-4"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <span className="text-[#8C3A27] dark:text-red-400">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                        <polyline points="14 2 14 8 20 8" />
+                        <line x1="16" y1="13" x2="8" y2="13" />
+                        <line x1="16" y1="17" x2="8" y2="17" />
+                        <polyline points="10 9 9 9 8 9" />
+                      </svg>
+                    </span>
+                    <div>
+                      <h2 className="text-sm font-bold text-zinc-900 dark:text-white">
+                        Descrição do produto
+                      </h2>
+                      <p className="text-xs text-zinc-400 dark:text-zinc-500 font-normal">
+                        Conte um pouco mais sobre o seu produto. Isso ajuda seus clientes a escolherem.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <textarea
+                      rows={4}
+                      maxLength={500}
+                      value={draft.description}
+                      placeholder="Risoto cremoso de cogumelos frescos, finalizado com parmesão e ervas."
+                      onChange={(e) => setDraft({ ...draft, description: e.target.value })}
+                      className="w-full p-3.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm text-zinc-900 dark:text-white placeholder-zinc-400 focus:outline-none focus:border-zinc-400 transition-all resize-y"
+                    />
+                    <div className="text-right text-[11px] text-zinc-400 mt-1">
+                      {draft.description.length}/500
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-zinc-800 dark:text-zinc-200 mb-1.5">
+                      Adicionar observações (opcional)
+                    </label>
+                    <input
+                      maxLength={200}
+                      value={draft.dietaryInformation}
+                      placeholder="Ex: alérgicos, ingredientes especiais, etc."
+                      onChange={(e) => setDraft({ ...draft, dietaryInformation: e.target.value })}
+                      className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3.5 py-2.5 text-sm text-zinc-900 dark:text-white placeholder-zinc-400 focus:outline-none focus:border-zinc-400 transition-all"
+                    />
+                    <div className="text-right text-[11px] text-zinc-400 mt-1">
+                      {draft.dietaryInformation.length}/200
+                    </div>
+                  </div>
+                </div>
+
+                {/* Navegação da etapa */}
+                <div className="flex justify-end pt-1">
+                  <button
+                    type="button"
+                    onClick={() => handleSelectTab("media")}
+                    className="px-5 py-2.5 rounded-xl bg-[#610000] hover:bg-[#4a0000] text-white text-xs font-bold transition-all shadow-sm cursor-pointer flex items-center gap-2"
                   >
-                    <option value="" disabled>Selecione uma categoria</option>
-                    {categories.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name} {c.active ? "" : " (oculta)"}
-                      </option>
-                    ))}
-                  </select>
+                    <span>Próximo: Fotos e vídeo</span>
+                    <span>→</span>
+                  </button>
                 </div>
-              </div>
+              </>
+            )}
 
-              {/* Alerta de Endereço Preservado */}
-              <div className="flex items-center gap-2.5 p-3 rounded-xl bg-[#FAF7F2] dark:bg-zinc-800/50 border border-[#EFEAE2] dark:border-zinc-700 text-xs text-zinc-600 dark:text-zinc-400">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[#8C3A27] shrink-0">
-                  <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-                  <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-                </svg>
-                <span>O endereço é preservado para manter os links existentes.</span>
-              </div>
-            </div>
+            {/* ABA 2: Fotos e vídeo */}
+            {activeSection === "media" && (
+              <>
+                <div
+                  id="sec-media"
+                  className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 p-6 shadow-2xs space-y-5"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <span className="text-[#8C3A27] dark:text-red-400">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
+                          <circle cx="9" cy="9" r="2" />
+                          <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
+                        </svg>
+                      </span>
+                      <div>
+                        <h3 className="text-sm font-bold text-zinc-900 dark:text-white">
+                          Fotos e vídeo do produto
+                        </h3>
+                        <p className="text-xs text-zinc-400 dark:text-zinc-500 font-normal">
+                          Adicione fotos e vídeos para destacar seu produto.
+                        </p>
+                      </div>
+                    </div>
 
-            {/* Card 2: Descrição do produto */}
-            <div
-              id="sec-description"
-              className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 p-6 shadow-2xs space-y-4"
-            >
-              <div className="flex items-center gap-2.5">
-                <span className="text-[#8C3A27] dark:text-red-400">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                    <polyline points="14 2 14 8 20 8" />
-                    <line x1="16" y1="13" x2="8" y2="13" />
-                    <line x1="16" y1="17" x2="8" y2="17" />
-                    <polyline points="10 9 9 9 8 9" />
-                  </svg>
-                </span>
-                <div>
-                  <h2 className="text-sm font-bold text-zinc-900 dark:text-white">
-                    Descrição do produto
-                  </h2>
-                  <p className="text-xs text-zinc-400 dark:text-zinc-500 font-normal">
-                    Conte um pouco mais sobre o seu produto. Isso ajuda seus clientes a escolherem.
-                  </p>
+                    <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">
+                      {photos.length}/{MAX_PHOTOS} fotos
+                    </span>
+                  </div>
+
+                  {/* Grade com Todas as Fotos do Produto + Gestão de Foto Principal */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {photos.map((photo, index) => {
+                      const isCover = coverId ? photo.id === coverId : index === 0;
+                      return (
+                        <div
+                          key={photo.id}
+                          className={`relative aspect-square rounded-2xl overflow-hidden border transition-all group ${
+                            isCover
+                              ? "ring-3 ring-[#610000] border-transparent shadow-md"
+                              : "border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 hover:border-zinc-400"
+                          }`}
+                        >
+                          <img
+                            src={photo.previewUrl || photo.url}
+                            alt={photo.alt}
+                            className="w-full h-full object-cover"
+                          />
+
+                          {/* Badge ou Botão de Foto Principal (Capa) */}
+                          {isCover ? (
+                            <div className="absolute top-2 left-2 px-2.5 py-1 rounded-full bg-[#610000] text-white text-[10px] font-bold shadow-md flex items-center gap-1.5 z-10 select-none">
+                              <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor">
+                                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                              </svg>
+                              <span>Principal</span>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => makeCoverPhoto(photo.id)}
+                              title="Definir como foto principal (capa)"
+                              className="absolute top-2 left-2 px-2.5 py-1 rounded-full bg-black/60 hover:bg-[#610000] text-white text-[10px] font-medium shadow-md flex items-center gap-1.5 opacity-90 group-hover:opacity-100 transition-all cursor-pointer z-10 select-none"
+                            >
+                              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                              </svg>
+                              <span>Tornar principal</span>
+                            </button>
+                          )}
+
+                          {/* Botão Remover Foto */}
+                          <button
+                            type="button"
+                            onClick={() => removePhoto(photo.id)}
+                            title="Remover foto"
+                            aria-label="Remover foto"
+                            className="absolute top-2 right-2 w-6 h-6 rounded-full bg-black/60 hover:bg-red-600 text-white flex items-center justify-center text-xs transition-colors cursor-pointer z-10 shadow-sm"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      );
+                    })}
+
+                    {/* Botão Adicionar mais (quando já tem fotos e há espaço) */}
+                    {photos.length > 0 && photos.length < MAX_PHOTOS && (
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="aspect-square rounded-2xl border-2 border-dashed border-zinc-200 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-800/30 hover:border-[#610000] hover:bg-zinc-100/60 dark:hover:bg-zinc-800/60 flex flex-col items-center justify-center p-3 text-zinc-600 dark:text-zinc-300 transition-all cursor-pointer group"
+                      >
+                        <div className="w-10 h-10 rounded-full bg-[#610000]/10 text-[#610000] dark:bg-red-950/40 dark:text-red-400 flex items-center justify-center mb-1.5 group-hover:scale-110 transition-transform">
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <line x1="12" y1="5" x2="12" y2="19" />
+                            <line x1="5" y1="12" x2="19" y2="12" />
+                          </svg>
+                        </div>
+                        <span className="text-xs font-semibold">Adicionar mais</span>
+                        <span className="text-[10px] text-zinc-400">({photos.length}/{MAX_PHOTOS})</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Estado Vazio de Fotos */}
+                  {photos.length === 0 && (
+                    <div
+                      onClick={() => fileInputRef.current?.click()}
+                      className="py-10 px-4 rounded-2xl border-2 border-dashed border-zinc-200 dark:border-zinc-700 hover:border-[#610000] bg-zinc-50/50 dark:bg-zinc-800/30 flex flex-col items-center justify-center text-center cursor-pointer transition-colors"
+                    >
+                      <div className="w-12 h-12 rounded-full bg-[#610000]/10 text-[#610000] dark:bg-red-950/40 dark:text-red-400 flex items-center justify-center mb-2">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
+                          <circle cx="9" cy="9" r="2" />
+                          <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
+                        </svg>
+                      </div>
+                      <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200">
+                        Nenhuma foto adicionada ainda
+                      </span>
+                      <span className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5">
+                        Clique aqui ou use a área abaixo para enviar as fotos do seu produto.
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Área de Dropzone */}
+                  <div
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      setIsDragging(true);
+                    }}
+                    onDragLeave={() => setIsDragging(false)}
+                    onDrop={handleDrop}
+                    onClick={() => fileInputRef.current?.click()}
+                    className={`border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition-all ${
+                      isDragging
+                        ? "border-[#610000] bg-[#610000]/5"
+                        : "border-zinc-200 dark:border-zinc-700 hover:border-[#610000] bg-zinc-50/50 dark:bg-zinc-800/20"
+                    }`}
+                  >
+                    <span className="text-[#610000] dark:text-red-400 inline-block mb-1.5">
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242" />
+                        <path d="M12 12v9" />
+                        <path d="m16 16-4-4-4 4" />
+                      </svg>
+                    </span>
+                    <p className="text-xs font-bold text-zinc-800 dark:text-zinc-200">
+                      Arraste e solte fotos aqui
+                    </p>
+                    <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5">
+                      ou clique para selecionar do seu dispositivo
+                    </p>
+                  </div>
+
+                  {/* Seção Vídeo do produto */}
+                  <div className="space-y-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+                    <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200 block">
+                      Vídeo do produto (opcional)
+                    </span>
+
+                    <div className="flex items-center gap-3">
+                      {video ? (
+                        <div className="relative w-40 aspect-[16/10] rounded-xl overflow-hidden bg-black/90 flex items-center justify-center border border-zinc-200 dark:border-zinc-700">
+                          <video
+                            src={video.previewUrl || video.url}
+                            className="w-full h-full object-cover"
+                          />
+                          <button
+                            type="button"
+                            onClick={removeVideo}
+                            title="Excluir vídeo"
+                            className="absolute bottom-1.5 right-2 text-white/80 hover:text-white p-0.5 cursor-pointer"
+                          >
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M3 6h18" />
+                              <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                              <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                            </svg>
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => videoInputRef.current?.click()}
+                          className="px-4 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 text-xs font-semibold hover:bg-zinc-50 dark:hover:bg-zinc-750 transition-colors cursor-pointer shadow-2xs"
+                        >
+                          + Adicionar vídeo (até 60s)
+                        </button>
+                      )}
+
+                      {video && (
+                        <button
+                          type="button"
+                          onClick={() => videoInputRef.current?.click()}
+                          className="px-3.5 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 text-xs font-medium hover:bg-zinc-50 dark:hover:bg-zinc-750 transition-colors cursor-pointer shadow-2xs whitespace-nowrap"
+                        >
+                          Substituir vídeo
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Rodapé informativo */}
+                  <div className="p-3 rounded-xl bg-[#FAF7F2] dark:bg-zinc-800/50 border border-[#EFEAE2] dark:border-zinc-700 flex items-start gap-2.5 text-[11px] text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                    <span className="text-[#8C3A27] shrink-0 mt-0.5">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="12" cy="12" r="10" />
+                        <line x1="12" y1="16" x2="12" y2="12" />
+                        <line x1="12" y1="8" x2="12.01" y2="8" />
+                      </svg>
+                    </span>
+                    <div>
+                      Formatos aceitos: JPG, PNG ou WebP. Até 10 MB por foto.
+                      <br />
+                      Vídeos: até 60 segundos. Otimizados automaticamente para WebP/MP4.
+                    </div>
+                  </div>
                 </div>
-              </div>
 
-              <div>
-                <textarea
-                  rows={4}
-                  maxLength={500}
-                  value={draft.description}
-                  placeholder="Risoto cremoso de cogumelos frescos, finalizado com parmesão e ervas."
-                  onChange={(e) => setDraft({ ...draft, description: e.target.value })}
-                  className="w-full p-3.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm text-zinc-900 dark:text-white placeholder-zinc-400 focus:outline-none focus:border-zinc-400 transition-all resize-y"
-                />
-                <div className="text-right text-[11px] text-zinc-400 mt-1">
-                  {draft.description.length}/500
+                {/* Navegação da etapa */}
+                <div className="flex items-center justify-between pt-1">
+                  <button
+                    type="button"
+                    onClick={() => handleSelectTab("basic")}
+                    className="px-4 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 text-xs font-semibold hover:bg-zinc-50 dark:hover:bg-zinc-750 cursor-pointer"
+                  >
+                    ← Informações básicas
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectTab("price")}
+                    className="px-5 py-2.5 rounded-xl bg-[#610000] hover:bg-[#4a0000] text-white text-xs font-bold transition-all shadow-sm cursor-pointer flex items-center gap-2"
+                  >
+                    <span>Próximo: Preço</span>
+                    <span>→</span>
+                  </button>
                 </div>
-              </div>
+              </>
+            )}
 
-              <div>
-                <label className="block text-xs font-semibold text-zinc-800 dark:text-zinc-200 mb-1.5">
-                  Adicionar observações (opcional)
-                </label>
-                <input
-                  maxLength={200}
-                  value={draft.dietaryInformation}
-                  placeholder="Ex: alérgicos, ingredientes especiais, etc."
-                  onChange={(e) => setDraft({ ...draft, dietaryInformation: e.target.value })}
-                  className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3.5 py-2.5 text-sm text-zinc-900 dark:text-white placeholder-zinc-400 focus:outline-none focus:border-zinc-400 transition-all"
-                />
-                <div className="text-right text-[11px] text-zinc-400 mt-1">
-                  {draft.dietaryInformation.length}/200
-                </div>
-              </div>
-            </div>
-
-            {/* Linha Dupla: Preço + Disponibilidade */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              {/* Card 3A — Preço */}
-              <div
-                id="sec-price"
-                className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 p-6 shadow-2xs flex flex-col justify-between space-y-4"
-              >
-                <div>
+            {/* ABA 3: Preço */}
+            {activeSection === "price" && (
+              <>
+                <div
+                  id="sec-price"
+                  className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 p-6 shadow-2xs space-y-4"
+                >
                   <div className="flex items-center gap-2.5">
                     <span className="text-[#8C3A27] dark:text-red-400">
                       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1053,28 +1687,33 @@ export function CatalogEditor({
                     </span>
                     <div>
                       <h2 className="text-sm font-bold text-zinc-900 dark:text-white">
-                        Preço
+                        Preço do produto
                       </h2>
                       <p className="text-xs text-zinc-400 dark:text-zinc-500 font-normal">
-                        Defina o valor do seu produto.
+                        Defina o valor cobrado pelo seu produto no cardápio.
                       </p>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3 mt-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
                     <div>
                       <label className="block text-xs font-semibold text-zinc-800 dark:text-zinc-200 mb-1.5">
-                        Preço do produto *
+                        Preço de venda *
                       </label>
-                      <input
-                        required
-                        type="text"
-                        inputMode="decimal"
-                        value={draft.price}
-                        placeholder="R$ 48,00"
-                        onChange={(e) => setDraft({ ...draft, price: e.target.value })}
-                        className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3.5 py-2.5 text-sm font-medium text-zinc-900 dark:text-white focus:outline-none focus:border-zinc-400"
-                      />
+                      <div className="relative">
+                        <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-zinc-400">
+                          R$
+                        </span>
+                        <input
+                          required
+                          type="text"
+                          inputMode="decimal"
+                          value={draft.price}
+                          placeholder="48,00"
+                          onChange={(e) => setDraft({ ...draft, price: e.target.value })}
+                          className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 pl-10 pr-3.5 py-2.5 text-sm font-medium text-zinc-900 dark:text-white focus:outline-none focus:border-zinc-400"
+                        />
+                      </div>
                     </div>
 
                     <div>
@@ -1082,13 +1721,16 @@ export function CatalogEditor({
                         Preço promocional (opcional)
                       </label>
                       <div className="relative">
+                        <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-zinc-400">
+                          R$
+                        </span>
                         <input
                           type="text"
                           inputMode="decimal"
                           value={draft.promoPrice}
-                          placeholder="R$ 0,00"
+                          placeholder="0,00"
                           onChange={(e) => setDraft({ ...draft, promoPrice: e.target.value })}
-                          className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3.5 py-2.5 pr-9 text-sm text-zinc-900 dark:text-white placeholder-zinc-400 focus:outline-none focus:border-zinc-400"
+                          className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 pl-10 pr-9 py-2.5 text-sm text-zinc-900 dark:text-white placeholder-zinc-400 focus:outline-none focus:border-zinc-400"
                         />
                         <span className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none">
                           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1101,19 +1743,40 @@ export function CatalogEditor({
                       </div>
                     </div>
                   </div>
+
+                  <p className="text-[11px] text-zinc-400 dark:text-zinc-500 leading-tight pt-1">
+                    Quando preenchido, o preço promocional aparecerá em destaque e o valor original riscado.
+                  </p>
                 </div>
 
-                <p className="text-[11px] text-zinc-400 dark:text-zinc-500 leading-tight">
-                  O preço promocional aparecerá no cardápio com o valor original riscado.
-                </p>
-              </div>
+                {/* Navegação da etapa */}
+                <div className="flex items-center justify-between pt-1">
+                  <button
+                    type="button"
+                    onClick={() => handleSelectTab("media")}
+                    className="px-4 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 text-xs font-semibold hover:bg-zinc-50 dark:hover:bg-zinc-750 cursor-pointer"
+                  >
+                    ← Fotos e vídeo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectTab("availability")}
+                    className="px-5 py-2.5 rounded-xl bg-[#610000] hover:bg-[#4a0000] text-white text-xs font-bold transition-all shadow-sm cursor-pointer flex items-center gap-2"
+                  >
+                    <span>Próximo: Disponibilidade</span>
+                    <span>→</span>
+                  </button>
+                </div>
+              </>
+            )}
 
-              {/* Card 3B — Disponibilidade */}
-              <div
-                id="sec-availability"
-                className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 p-6 shadow-2xs flex flex-col justify-between space-y-4"
-              >
-                <div>
+            {/* ABA 4: Disponibilidade */}
+            {activeSection === "availability" && (
+              <>
+                <div
+                  id="sec-availability"
+                  className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 p-6 shadow-2xs space-y-4"
+                >
                   <div className="flex items-center gap-2.5">
                     <span className="text-[#8C3A27] dark:text-red-400">
                       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1123,190 +1786,243 @@ export function CatalogEditor({
                     </span>
                     <div>
                       <h2 className="text-sm font-bold text-zinc-900 dark:text-white">
-                        Disponibilidade
+                        Disponibilidade do produto
                       </h2>
                       <p className="text-xs text-zinc-400 dark:text-zinc-500 font-normal">
-                        Defina se o produto está disponível no cardápio.
+                        Controle se o item está visível e disponível para pedidos.
                       </p>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-3.5 mt-5">
+                  <div className="flex items-center gap-4 p-4 rounded-xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200/80 dark:border-zinc-700 mt-2">
                     <Switch
                       checked={draft.available}
                       onChange={(checked) => setDraft({ ...draft, available: checked })}
                     />
                     <div>
-                      <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200 block">
-                        Produto disponível no cardápio
+                      <span className="text-sm font-bold text-zinc-900 dark:text-white block">
+                        {draft.available ? "Produto disponível no cardápio" : "Produto indisponível"}
                       </span>
-                      <span className="text-[11px] text-zinc-400 dark:text-zinc-500 block mt-0.5">
-                        Desative para que o item não apareça no cardápio.
+                      <span className="text-xs text-zinc-500 dark:text-zinc-400 block mt-0.5">
+                        {draft.available
+                          ? "Os clientes conseguem visualizar e pedir este item normalmente."
+                          : "O item não poderá ser pedido pelos clientes enquanto estiver desativado."}
                       </span>
                     </div>
                   </div>
                 </div>
 
-                <div />
-              </div>
-            </div>
-
-            {/* Card 4: Detalhes adicionais */}
-            <div
-              id="sec-details"
-              className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 p-6 shadow-2xs space-y-4"
-            >
-              <div className="flex items-center gap-2.5">
-                <span className="text-[#8C3A27] dark:text-red-400">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="12" cy="12" r="3" />
-                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
-                  </svg>
-                </span>
-                <div>
-                  <h2 className="text-sm font-bold text-zinc-900 dark:text-white">
-                    Detalhes adicionais
-                  </h2>
-                  <p className="text-xs text-zinc-400 dark:text-zinc-500 font-normal">
-                    Configure informações extras do produto.
-                  </p>
-                </div>
-              </div>
-
-              {/* Grid em 3 Colunas Exatas da Imagem */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-center pt-1">
-                <div>
-                  <label className="block text-xs font-semibold text-zinc-800 dark:text-zinc-200 mb-1.5">
-                    Tipo de serviço
-                  </label>
-                  <select
-                    value={draft.serviceType}
-                    onChange={(e) => setDraft({ ...draft, serviceType: e.target.value })}
-                    className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3.5 py-2.5 text-sm text-zinc-900 dark:text-white cursor-pointer focus:outline-none focus:border-zinc-400"
+                {/* Navegação da etapa */}
+                <div className="flex items-center justify-between pt-1">
+                  <button
+                    type="button"
+                    onClick={() => handleSelectTab("price")}
+                    className="px-4 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 text-xs font-semibold hover:bg-zinc-50 dark:hover:bg-zinc-750 cursor-pointer"
                   >
-                    <option value="A la carte">A la carte</option>
-                    <option value="Rodízio">Rodízio</option>
-                    <option value="Buffet">Buffet</option>
-                    <option value="Self-service">Self-service</option>
-                  </select>
+                    ← Preço
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectTab("details")}
+                    className="px-5 py-2.5 rounded-xl bg-[#610000] hover:bg-[#4a0000] text-white text-xs font-bold transition-all shadow-sm cursor-pointer flex items-center gap-2"
+                  >
+                    <span>Próximo: Detalhes adicionais</span>
+                    <span>→</span>
+                  </button>
                 </div>
+              </>
+            )}
 
-                <div>
-                  <label className="block text-xs font-semibold text-zinc-800 dark:text-zinc-200 mb-1.5">
-                    Tempo de preparo (opcional)
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      value={draft.prepTimeMin ? `${draft.prepTimeMin} min` : ""}
-                      placeholder="15 min"
-                      onChange={(e) => {
-                        const val = e.target.value.replace(/\D/g, "");
-                        setDraft({
-                          ...draft,
-                          prepTimeMin: val,
-                          prepTimeMax: val,
-                        });
-                      }}
-                      className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3.5 py-2.5 pr-10 text-sm text-zinc-900 dark:text-white placeholder-zinc-400 focus:outline-none focus:border-zinc-400"
-                    />
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none">
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <circle cx="12" cy="12" r="10" />
-                        <polyline points="12 6 12 12 16 14" />
+            {/* ABA 5: Detalhes adicionais */}
+            {activeSection === "details" && (
+              <>
+                <div
+                  id="sec-details"
+                  className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 p-6 shadow-2xs space-y-5"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <span className="text-[#8C3A27] dark:text-red-400">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="12" cy="12" r="3" />
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
                       </svg>
                     </span>
-                  </div>
-                </div>
-
-                <div className="pt-4 sm:pt-3">
-                  <label className="flex items-start gap-2.5 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={draft.featured}
-                      onChange={(e) => setDraft({ ...draft, featured: e.target.checked })}
-                      className="mt-0.5 w-4 h-4 rounded border-zinc-300 text-[#610000] accent-[#610000] focus:ring-[#610000]"
-                    />
                     <div>
-                      <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200 block">
-                        Produto em destaque
-                      </span>
-                      <span className="text-[11px] text-zinc-400 dark:text-zinc-500 block">
-                        Aparece em primeiro lugar no cardápio.
-                      </span>
+                      <h2 className="text-sm font-bold text-zinc-900 dark:text-white">
+                        Detalhes adicionais
+                      </h2>
+                      <p className="text-xs text-zinc-400 dark:text-zinc-500 font-normal">
+                        Configure informações operacionais e de destaque.
+                      </p>
                     </div>
-                  </label>
-                </div>
-              </div>
-
-              {/* Seção sutil expansível para opções operacionais KDS e Estoque */}
-              <details className="pt-2 text-xs text-zinc-500">
-                <summary className="cursor-pointer text-zinc-400 hover:text-zinc-600 font-medium select-none py-1">
-                  + Opções operacionais de preparo e estoque
-                </summary>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-zinc-100 dark:border-zinc-800 mt-2">
-                  <div>
-                    <label className="block text-xs font-semibold text-zinc-800 dark:text-zinc-200 mb-1.5">
-                      Estação de preparo (KDS)
-                    </label>
-                    <select
-                      value={draft.preparationStation}
-                      onChange={(e) =>
-                        setDraft({
-                          ...draft,
-                          preparationStation: e.target.value as "kitchen" | "bar" | "none",
-                        })
-                      }
-                      className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3.5 py-2.5 text-sm text-zinc-900 dark:text-white cursor-pointer"
-                    >
-                      <option value="kitchen">Cozinha (Padrão)</option>
-                      <option value="bar">Bar (Bebidas e Drinks)</option>
-                      <option value="none">Sem preparo / Pronta entrega</option>
-                    </select>
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-semibold text-zinc-800 dark:text-zinc-200 mb-1.5">
-                      Vincular ao estoque
-                    </label>
-                    <select
-                      value={draft.inventoryItemId}
-                      onChange={(e) => setDraft({ ...draft, inventoryItemId: e.target.value })}
-                      className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3.5 py-2.5 text-sm text-zinc-900 dark:text-white cursor-pointer"
-                    >
-                      <option value="">Sem vínculo (Estoque ilimitado)</option>
-                      {inventoryItems.map((item) => (
-                        <option key={item.id} value={item.id}>
-                          {item.name} ({item.unit_measure}) — Saldo: {item.current_quantity}
-                        </option>
-                      ))}
-                    </select>
+                  {/* Grid em 3 Colunas: Tipo de serviço, tempo de preparo e destaque */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-center pt-1">
+                    <div>
+                      <label className="block text-xs font-semibold text-zinc-800 dark:text-zinc-200 mb-1.5">
+                        Tipo de serviço
+                      </label>
+                      <select
+                        value={draft.serviceType}
+                        onChange={(e) => setDraft({ ...draft, serviceType: e.target.value })}
+                        className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3.5 py-2.5 text-sm text-zinc-900 dark:text-white cursor-pointer focus:outline-none focus:border-zinc-400"
+                      >
+                        <option value="A la carte">A la carte</option>
+                        <option value="Rodízio">Rodízio</option>
+                        <option value="Buffet">Buffet</option>
+                        <option value="Self-service">Self-service</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-zinc-800 dark:text-zinc-200 mb-1.5">
+                        Tempo de preparo (opcional)
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          value={draft.prepTimeMin ? `${draft.prepTimeMin} min` : ""}
+                          placeholder="15 min"
+                          onChange={(e) => {
+                            const val = e.target.value.replace(/\D/g, "");
+                            setDraft({
+                              ...draft,
+                              prepTimeMin: val,
+                              prepTimeMax: val,
+                            });
+                          }}
+                          className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3.5 py-2.5 pr-10 text-sm text-zinc-900 dark:text-white placeholder-zinc-400 focus:outline-none focus:border-zinc-400"
+                        />
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none">
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <circle cx="12" cy="12" r="10" />
+                            <polyline points="12 6 12 12 16 14" />
+                          </svg>
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="pt-4 sm:pt-3">
+                      <label className="flex items-start gap-2.5 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={draft.featured}
+                          onChange={(e) => setDraft({ ...draft, featured: e.target.checked })}
+                          className="mt-0.5 w-4 h-4 rounded border-zinc-300 text-[#610000] accent-[#610000] focus:ring-[#610000]"
+                        />
+                        <div>
+                          <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200 block">
+                            Produto em destaque
+                          </span>
+                          <span className="text-[11px] text-zinc-400 dark:text-zinc-500 block">
+                            Aparece em primeiro lugar no cardápio.
+                          </span>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Opções operacionais KDS e Estoque */}
+                  <div className="pt-3 border-t border-zinc-100 dark:border-zinc-800">
+                    <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200 block mb-3">
+                      Opções operacionais (KDS e Estoque)
+                    </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1.5">
+                          Estação de preparo (KDS)
+                        </label>
+                        <select
+                          value={draft.preparationStation}
+                          onChange={(e) =>
+                            setDraft({
+                              ...draft,
+                              preparationStation: e.target.value as "kitchen" | "bar" | "none",
+                            })
+                          }
+                          className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3.5 py-2.5 text-sm text-zinc-900 dark:text-white cursor-pointer"
+                        >
+                          <option value="kitchen">Cozinha (Padrão)</option>
+                          <option value="bar">Bar (Bebidas e Drinks)</option>
+                          <option value="none">Sem preparo / Pronta entrega</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1.5">
+                          Vincular ao estoque
+                        </label>
+                        <select
+                          value={draft.inventoryItemId}
+                          onChange={(e) => setDraft({ ...draft, inventoryItemId: e.target.value })}
+                          className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3.5 py-2.5 text-sm text-zinc-900 dark:text-white cursor-pointer"
+                        >
+                          <option value="">Sem vínculo (Estoque ilimitado)</option>
+                          {inventoryItems.map((item) => (
+                            <option key={item.id} value={item.id}>
+                              {item.name} ({item.unit_measure}) — Saldo: {item.current_quantity}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </details>
-            </div>
+
+                {/* Navegação da etapa */}
+                <div className="flex items-center justify-between pt-1">
+                  <button
+                    type="button"
+                    onClick={() => handleSelectTab("availability")}
+                    className="px-4 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 text-xs font-semibold hover:bg-zinc-50 dark:hover:bg-zinc-750 cursor-pointer"
+                  >
+                    ← Disponibilidade
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={busy || preparing}
+                    className="px-6 py-2.5 rounded-xl bg-[#610000] hover:bg-[#4a0000] text-white text-xs font-bold shadow-sm transition-all cursor-pointer disabled:opacity-50 flex items-center gap-2"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                      <polyline points="17 21 17 13 7 13 7 21" />
+                      <polyline points="7 3 7 8 15 8" />
+                    </svg>
+                    <span>{busy ? "Salvando…" : "Salvar alterações"}</span>
+                  </button>
+                </div>
+              </>
+            )}
+
           </div>
 
-          {/* ==================== COLUNA DA DIREITA (4 Colunas) ==================== */}
-          <div className="lg:col-span-4 flex flex-col gap-6">
-            {/* Card Lateral 1: Prévia no cardápio */}
+          {/* ==================== COLUNA DA DIREITA (4 Colunas) — PRÉVIA DO CARDÁPIO ==================== */}
+          <div className="lg:col-span-4 flex flex-col gap-6 sticky top-6">
             <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 p-6 shadow-2xs space-y-4">
-              <div className="flex items-center gap-2.5">
-                <span className="text-[#8C3A27] dark:text-red-400">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
-                    <circle cx="9" cy="9" r="2" />
-                    <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
-                  </svg>
-                </span>
-                <h3 className="text-sm font-bold text-zinc-900 dark:text-white">
-                  Prévia no cardápio
-                </h3>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <span className="text-[#8C3A27] dark:text-red-400">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
+                      <circle cx="9" cy="9" r="2" />
+                      <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
+                    </svg>
+                  </span>
+                  <h3 className="text-sm font-bold text-zinc-900 dark:text-white">
+                    Prévia no cardápio
+                  </h3>
+                </div>
+                {draft.featured && (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20">
+                    ★ Destaque
+                  </span>
+                )}
               </div>
 
-              {/* Card visual de simulação do cardápio */}
+              {/* Simulação do card no cardápio */}
               <div className="space-y-3">
-                <div className="relative aspect-[16/10] w-full rounded-2xl overflow-hidden bg-zinc-100 dark:bg-zinc-800">
+                <div className="relative aspect-[16/10] w-full rounded-2xl overflow-hidden bg-zinc-100 dark:bg-zinc-800 border border-zinc-200/60 dark:border-zinc-700/60">
                   {currentCover ? (
                     <img
                       src={currentCover.previewUrl || currentCover.url}
@@ -1314,236 +2030,43 @@ export function CatalogEditor({
                       className="w-full h-full object-cover"
                     />
                   ) : (
-                    <img
-                      src="https://images.unsplash.com/photo-1633964913295-ceb43826e7c9?auto=format&fit=crop&w=800&q=80"
-                      alt="Risoto de cogumelos"
-                      className="w-full h-full object-cover"
-                    />
+                    <div className="w-full h-full flex flex-col items-center justify-center text-zinc-400 text-xs">
+                      <span>Sem foto de capa</span>
+                    </div>
                   )}
+
+                  {/* Badge de Disponibilidade na Prévia */}
+                  <div className="absolute top-2.5 right-2.5">
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold shadow-xs ${
+                      draft.available
+                        ? "bg-emerald-600 text-white"
+                        : "bg-zinc-800/80 backdrop-blur-xs text-white"
+                    }`}>
+                      {draft.available ? "Disponível" : "Indisponível"}
+                    </span>
+                  </div>
                 </div>
 
                 <div>
                   <h4 className="font-bold text-base text-zinc-900 dark:text-white">
-                    {draft.name || "Risoto de cogumelos"}
+                    {draft.name || "Nome do produto"}
                   </h4>
                   <p className="text-xs text-zinc-400 dark:text-zinc-500 mt-0.5">
-                    {selectedCategoryName || "Prato principal"}
+                    {selectedCategoryName || "Categoria"}
                   </p>
-                  <div className="mt-2 font-bold text-base text-zinc-900 dark:text-white">
-                    R$ {draft.price || "48,00"}
+                  <div className="mt-2 flex items-baseline gap-2">
+                    <span className="font-bold text-base text-zinc-900 dark:text-white">
+                      R$ {draft.price || "0,00"}
+                    </span>
+                    {draft.promoPrice && (
+                      <span className="text-xs text-zinc-400 line-through">
+                        R$ {draft.promoPrice}
+                      </span>
+                    )}
                   </div>
                   <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1 leading-relaxed">
-                    {draft.description || "Risoto cremoso de cogumelos frescos, finalizado com parmesão e ervas."}
+                    {draft.description || "Descrição do produto..."}
                   </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Card Lateral 2: Fotos e vídeo do produto */}
-            <div
-              id="sec-media"
-              className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 p-6 shadow-2xs space-y-4"
-            >
-              <div className="flex items-center gap-2.5">
-                <span className="text-[#8C3A27] dark:text-red-400">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
-                    <circle cx="9" cy="9" r="2" />
-                    <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
-                  </svg>
-                </span>
-                <div>
-                  <h3 className="text-sm font-bold text-zinc-900 dark:text-white">
-                    Fotos e vídeo do produto
-                  </h3>
-                  <p className="text-xs text-zinc-400 dark:text-zinc-500 font-normal">
-                    Adicione fotos e vídeos para destacar seu produto.
-                  </p>
-                </div>
-              </div>
-
-              {/* Grade de Miniaturas Exata da Imagem */}
-              <div className="grid grid-cols-3 gap-2.5">
-                {photos.slice(0, 2).map((photo) => (
-                  <div
-                    key={photo.id}
-                    className="relative aspect-square rounded-xl overflow-hidden border border-zinc-200/80 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 group"
-                  >
-                    <img
-                      src={photo.previewUrl || photo.url}
-                      alt={photo.alt}
-                      className="w-full h-full object-cover"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => removePhoto(photo.id)}
-                      aria-label="Remover foto"
-                      className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full bg-black/60 hover:bg-black text-white flex items-center justify-center text-[10px] transition-all cursor-pointer z-10"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                ))}
-
-                {photos.length === 0 && (
-                  <>
-                    <div className="relative aspect-square rounded-xl overflow-hidden border border-zinc-200/80 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800">
-                      <img
-                        src="https://images.unsplash.com/photo-1633964913295-ceb43826e7c9?auto=format&fit=crop&w=400&q=80"
-                        alt="Risoto de cogumelos 1"
-                        className="w-full h-full object-cover"
-                      />
-                      <button
-                        type="button"
-                        aria-label="Excluir"
-                        className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full bg-black/60 text-white flex items-center justify-center text-[10px]"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                    <div className="relative aspect-square rounded-xl overflow-hidden border border-zinc-200/80 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800">
-                      <img
-                        src="https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=400&q=80"
-                        alt="Risoto de cogumelos 2"
-                        className="w-full h-full object-cover"
-                      />
-                      <button
-                        type="button"
-                        aria-label="Excluir"
-                        className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full bg-black/60 text-white flex items-center justify-center text-[10px]"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  </>
-                )}
-
-                {/* Botão Adicionar mais */}
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="aspect-square rounded-xl border border-zinc-200/80 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-800/40 hover:bg-zinc-100/70 dark:hover:bg-zinc-800 flex flex-col items-center justify-center p-2 text-zinc-600 dark:text-zinc-300 transition-colors cursor-pointer"
-                >
-                  <span className="text-[#8C3A27] dark:text-red-400">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <circle cx="12" cy="12" r="10" />
-                      <line x1="12" y1="8" x2="12" y2="16" />
-                      <line x1="8" y1="12" x2="16" y2="12" />
-                    </svg>
-                  </span>
-                  <span className="text-[11px] font-medium mt-1">Adicionar mais</span>
-                </button>
-              </div>
-
-              {/* Área de Dropzone */}
-              <div
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  setIsDragging(true);
-                }}
-                onDragLeave={() => setIsDragging(false)}
-                onDrop={handleDrop}
-                onClick={() => fileInputRef.current?.click()}
-                className={`border border-dashed rounded-xl p-5 text-center cursor-pointer transition-all ${
-                  isDragging
-                    ? "border-[#8C3A27] bg-[#FAF8F5]"
-                    : "border-zinc-200 dark:border-zinc-700 hover:border-[#8C3A27] bg-[#FAF8F5]/60 dark:bg-zinc-800/20"
-                }`}
-              >
-                <span className="text-[#8C3A27] dark:text-red-400 inline-block mb-1.5">
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242" />
-                    <path d="M12 12v9" />
-                    <path d="m16 16-4-4-4 4" />
-                  </svg>
-                </span>
-                <p className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
-                  Arraste e solte as imagens aqui
-                </p>
-                <p className="text-xs text-zinc-400 dark:text-zinc-500 mt-0.5">
-                  ou clique para selecionar
-                </p>
-              </div>
-
-              {/* Seção Vídeo do produto */}
-              <div className="space-y-2 pt-1">
-                <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200 block">
-                  Vídeo do produto (opcional)
-                </span>
-
-                <div className="flex items-center gap-3">
-                  {/* Thumbnail do Vídeo com Botão Play, Duração e Lixeira */}
-                  <div className="relative w-40 aspect-[16/10] rounded-xl overflow-hidden bg-black/90 flex items-center justify-center border border-zinc-200 dark:border-zinc-700">
-                    {video ? (
-                      <video
-                        src={video.previewUrl || video.url}
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <img
-                        src="https://images.unsplash.com/photo-1633964913295-ceb43826e7c9?auto=format&fit=crop&w=400&q=80"
-                        alt="Vídeo prévia"
-                        className="w-full h-full object-cover opacity-80"
-                      />
-                    )}
-
-                    {/* Botão Play centralizado */}
-                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                      <div className="w-7 h-7 rounded-full bg-white/25 backdrop-blur-xs flex items-center justify-center text-white">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                          <polygon points="5 3 19 12 5 21 5 3" />
-                        </svg>
-                      </div>
-                    </div>
-
-                    {/* Duração 0:45 */}
-                    <div className="absolute bottom-1.5 left-2 flex items-center gap-1 text-[10px] text-white/95 font-medium bg-black/40 px-1.5 py-0.5 rounded">
-                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <circle cx="12" cy="12" r="10" />
-                        <polyline points="12 6 12 12 16 14" />
-                      </svg>
-                      <span>0:45</span>
-                    </div>
-
-                    {/* Ícone de Excluir */}
-                    <button
-                      type="button"
-                      onClick={removeVideo}
-                      title="Excluir vídeo"
-                      className="absolute bottom-1.5 right-2 text-white/80 hover:text-white p-0.5 cursor-pointer"
-                    >
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M3 6h18" />
-                        <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
-                        <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
-                      </svg>
-                    </button>
-                  </div>
-
-                  {/* Botão Substituir Vídeo */}
-                  <button
-                    type="button"
-                    onClick={() => videoInputRef.current?.click()}
-                    className="px-4 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 text-xs font-medium hover:bg-zinc-50 dark:hover:bg-zinc-700 transition-colors cursor-pointer shadow-2xs whitespace-nowrap"
-                  >
-                    Substituir vídeo
-                  </button>
-                </div>
-              </div>
-
-              {/* Rodapé informativo */}
-              <div className="p-3 rounded-xl bg-[#FAF7F2] dark:bg-zinc-800/50 border border-[#EFEAE2] dark:border-zinc-700 flex items-start gap-2.5 text-[11px] text-zinc-500 dark:text-zinc-400 leading-relaxed">
-                <span className="text-[#8C3A27] shrink-0 mt-0.5">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="12" cy="12" r="10" />
-                    <line x1="12" y1="16" x2="12" y2="12" />
-                    <line x1="12" y1="8" x2="12.01" y2="8" />
-                  </svg>
-                </span>
-                <div>
-                  Formatos aceitos: JPG, PNG ou WebP. Até 10 MB por arquivo.
-                  <br />
-                  Vídeos: até 60 segundos. Otimizados automaticamente para WebP.
                 </div>
               </div>
             </div>

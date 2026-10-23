@@ -281,20 +281,20 @@ export function AdminTopbar({ restaurant }: AdminTopbarProps) {
 
   return (
     <header
-      className={`admin-topbar print:hidden px-6 py-4 flex items-center justify-between gap-4 border-b transition-colors duration-200 ${
+      className={`admin-topbar print:hidden px-6 py-2.5 sm:py-3 flex items-center justify-between gap-4 border-b transition-colors duration-200 ${
         isDark
           ? 'bg-[#18181b] border-zinc-800 text-white'
           : 'bg-white border-zinc-200/80 text-zinc-900 shadow-2xs'
       }`}
     >
-      {/* Lado Esquerdo: Título e Subtítulo */}
-      <div>
-        <h1 className="text-lg sm:text-xl font-extrabold tracking-tight text-zinc-900 dark:text-white leading-tight">
-          Administração
-        </h1>
-        <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-          Gerencie o seu restaurante
-        </p>
+      {/* Lado Esquerdo: Título e Subtítulo Compactos */}
+      <div className="flex flex-col justify-center leading-tight">
+        <span className="text-xs font-black uppercase tracking-wider text-[#610000] dark:text-red-400">
+          ADMINISTRAÇÃO
+        </span>
+        <span className="text-[11px] text-zinc-500 dark:text-zinc-400 font-medium">
+          Gerencie seu restaurante
+        </span>
       </div>
 
       {/* Lado Direito: Indicador do restaurante, sons, notificações, tema e perfil */}

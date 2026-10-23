@@ -54,7 +54,7 @@ export function KdsItemCard({ item, onAdvance, isMutating = false }: KdsItemCard
           ? 'border-rose-400 bg-rose-50/70 shadow-rose-100 dark:border-rose-900/60 dark:bg-rose-950/30'
           : urgency === 'warning'
           ? 'border-amber-300 bg-amber-50/70 shadow-amber-50 dark:border-amber-900/60 dark:bg-amber-950/30'
-          : 'border-slate-200 bg-white dark:border-zinc-800 dark:bg-[#18181b]'
+          : 'border-[#DCD8CE] bg-white shadow-2xs hover:border-[#CDC9BF] dark:border-zinc-800 dark:bg-[#18181b]'
       }`}
       aria-labelledby={`kds-item-title-${item.id}`}
     >
@@ -89,11 +89,12 @@ export function KdsItemCard({ item, onAdvance, isMutating = false }: KdsItemCard
                   orderId: item.id,
                 });
               }}
-              title="Imprimir via da cozinha (80mm)"
-              aria-label="Imprimir via da cozinha (80mm)"
-              className="inline-flex items-center justify-center p-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 dark:border-zinc-700 dark:hover:bg-zinc-800 text-slate-700 dark:text-zinc-200 transition-colors"
+              title="Imprimir comanda de cozinha (80mm)"
+              aria-label="Imprimir comanda de cozinha (80mm)"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-[#D5D2C9] bg-[#FAF9F6] hover:bg-white dark:border-zinc-700 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 hover:text-slate-900 dark:text-zinc-200 text-xs font-semibold shadow-2xs transition-colors cursor-pointer"
             >
-              <ThermalPrinterIcon className="w-3.5 h-3.5" />
+              <ThermalPrinterIcon className="w-3.5 h-3.5 text-slate-600 dark:text-zinc-300" />
+              <span className="text-[11px] font-bold">Imprimir</span>
             </button>
 
             {/* Cronômetro decorrido com indicador de urgência */}

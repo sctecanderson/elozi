@@ -398,7 +398,7 @@ export function AdminLayout() {
           </div>
         )}
 
-        <main id="admin-content" className="print:p-0 print:m-0 print:w-full print:block p-6 lg:p-8">
+        <main id="admin-content" className="print:p-0 print:m-0 print:w-full print:block px-4 sm:px-6 lg:px-8 pt-[10px] pb-8">
           {isSevereOverdue && !isBillingTab ? (
             <div
               className="p-8 max-w-xl mx-auto my-12 text-center rounded-2xl border"

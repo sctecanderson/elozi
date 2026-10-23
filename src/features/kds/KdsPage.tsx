@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Link, useParams } from 'react-router';
+import { Link, useParams, useNavigate } from 'react-router';
+import { supabase } from '../../lib/supabase';
 import { useRestaurant } from '../restaurants/RestaurantProvider';
 import { ThemeToggleButton } from '../theme/ThemeToggleButton';
 import {
@@ -29,6 +30,11 @@ export function KdsPage() {
   const [currentTime, setCurrentTime] = useState(() => new Date());
   const [soundActive, setSoundActive] = useState(() => isSoundEnabled());
   const { isWakeLockActive, isSupported: isWakeLockSupported } = useScreenWakeLock(true);
+  const navigate = useNavigate();
+  const [isExitModalOpen, setIsExitModalOpen] = useState(false);
+  const [exitPassword, setExitPassword] = useState('');
+  const [exitError, setExitError] = useState<string | null>(null);
+  const [exitLoading, setExitLoading] = useState(false);
 
   const isMountedRef = useRef(true);
 
@@ -192,11 +198,66 @@ export function KdsPage() {
     [filteredItems]
   );
 
+  // Trava de segurança com senha/PIN para sair do KDS
+  const handleConfirmExit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const trimmed = exitPassword.trim();
+    if (!trimmed) {
+      setExitError('Informe a senha ou PIN para sair.');
+      return;
+    }
+
+    setExitLoading(true);
+    setExitError(null);
+
+    try {
+      // 1. PIN personalizado salvo localmente para o KDS
+      const customPin = localStorage.getItem(`elozi_kds_pin_${restaurant.id}`) || localStorage.getItem('elozi_kds_pin');
+      if (customPin && trimmed === customPin) {
+        setIsExitModalOpen(false);
+        navigate(`/${slug}/admin`);
+        return;
+      }
+
+      // 2. PINs operacionais padrão ou slug do restaurante
+      const standardPins = ['1234', 'admin', 'admin123', slug.toLowerCase()];
+      if (standardPins.includes(trimmed.toLowerCase())) {
+        setIsExitModalOpen(false);
+        navigate(`/${slug}/admin`);
+        return;
+      }
+
+      // 3. Validação com credenciais da conta admin no Supabase Auth
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (user?.email) {
+        const { error } = await supabase.auth.signInWithPassword({
+          email: user.email,
+          password: trimmed,
+        });
+
+        if (!error) {
+          setIsExitModalOpen(false);
+          navigate(`/${slug}/admin`);
+          return;
+        }
+      }
+
+      setExitError('Senha ou PIN incorreto. Acesso restrito à cozinha.');
+    } catch {
+      setExitError('Erro ao validar acesso. Tente novamente.');
+    } finally {
+      setExitLoading(false);
+    }
+  };
+
   // Se o restaurante estiver no plano Básico, renderiza o Paywall comercial
   if (restaurant.subscriptionPlan === 'basic') {
     return (
-      <div className="flex min-h-screen flex-col bg-[#f8fafc] text-slate-900 antialiased dark:bg-[#09090b] dark:text-[#f4f4f5]">
-        <header className="sticky top-0 z-30 flex items-center justify-between border-b border-slate-200 bg-white/95 px-4 py-3 shadow-xs backdrop-blur-md dark:border-white/10 dark:bg-[#18181b]/95 md:px-6">
+      <div className="flex min-h-screen flex-col bg-[#F5F4F0] text-slate-900 antialiased dark:bg-[#09090b] dark:text-[#f4f4f5]">
+        <header className="sticky top-0 z-30 flex items-center justify-between border-b border-[#E2DFD7] bg-[#F5F4F0]/95 px-4 py-3 shadow-2xs backdrop-blur-md dark:border-white/10 dark:bg-[#18181b]/95 md:px-6">
           <div className="flex items-center gap-4">
             <Link
               to={`/${slug}/admin`}
@@ -271,34 +332,123 @@ export function KdsPage() {
             </div>
           </div>
         </main>
-      </div>
+      
+      {/* Modal de Trava de Segurança KDS */}
+      {isExitModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+          <div
+            className="w-full max-w-sm rounded-2xl border border-[#E2DFD7] bg-white p-6 shadow-2xl dark:border-zinc-800 dark:bg-[#18181b]"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="exit-modal-title"
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#610000]/10 text-[#610000] dark:bg-red-950/50 dark:text-red-400">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5" aria-hidden="true">
+                  <rect width="18" height="11" x="3" y="11" rx="2" ry="2" />
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                </svg>
+              </div>
+              <div>
+                <h3 id="exit-modal-title" className="text-base font-bold text-slate-900 dark:text-white">
+                  Trava de Segurança KDS
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-zinc-400">
+                  Controle de saída da cozinha
+                </p>
+              </div>
+            </div>
+
+            <p className="mb-4 text-xs text-slate-600 dark:text-zinc-300">
+              Informe a senha do administrador ou PIN de liberação para retornar ao painel administrativo.
+            </p>
+
+            <form onSubmit={handleConfirmExit} className="space-y-4">
+              <div>
+                <label htmlFor="kds-exit-pin" className="block text-xs font-semibold text-slate-700 dark:text-zinc-300 mb-1.5">
+                  Senha ou PIN
+                </label>
+                <input
+                  id="kds-exit-pin"
+                  type="password"
+                  autoFocus
+                  value={exitPassword}
+                  onChange={(e) => {
+                    setExitPassword(e.target.value);
+                    if (exitError) setExitError(null);
+                  }}
+                  placeholder="Digite a senha ou PIN..."
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:border-[#610000] focus:outline-hidden focus:ring-2 focus:ring-[#610000]/20 dark:border-zinc-700 dark:bg-zinc-900 dark:text-white dark:placeholder-zinc-500"
+                />
+                {exitError && (
+                  <p className="mt-1.5 text-xs font-semibold text-rose-600 dark:text-rose-400" role="alert">
+                    {exitError}
+                  </p>
+                )}
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-1">
+                <button
+                  type="button"
+                  disabled={exitLoading}
+                  onClick={() => {
+                    setIsExitModalOpen(false);
+                    setExitPassword('');
+                    setExitError(null);
+                  }}
+                  className="rounded-xl border border-slate-300 dark:border-zinc-700 px-4 py-2.5 text-xs font-bold text-slate-700 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+                >
+                  Permanecer no KDS
+                </button>
+                <button
+                  type="submit"
+                  disabled={exitLoading || !exitPassword.trim()}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-[#610000] px-4 py-2.5 text-xs font-bold text-white shadow-xs hover:bg-[#7a0000] disabled:opacity-50 transition-colors cursor-pointer"
+                >
+                  {exitLoading ? 'Validando…' : 'Liberar e Sair'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+    </div>
     );
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#f8fafc] text-slate-900 antialiased dark:bg-[#09090b] dark:text-[#f4f4f5]">
+    <div className="flex min-h-screen flex-col bg-[#F5F4F0] text-slate-900 antialiased dark:bg-[#09090b] dark:text-[#f4f4f5]">
       {/* =========================================================================
           BARRA SUPERIOR (TOPBAR DO KDS)
           ========================================================================= */}
-      <header className="sticky top-0 z-30 flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 bg-white/95 px-4 py-3 shadow-xs backdrop-blur-md dark:border-white/10 dark:bg-[#18181b]/95 md:px-6">
+      <header className="sticky top-0 z-30 flex flex-wrap items-center justify-between gap-4 border-b border-[#E2DFD7] bg-[#F5F4F0]/95 px-4 py-3 shadow-2xs backdrop-blur-md dark:border-white/10 dark:bg-[#18181b]/95 md:px-6">
         {/* Esquerda: Identificação do Restaurante & Relógio */}
         <div className="flex items-center gap-4">
-          <Link
-            to={`/${slug}/admin`}
-            className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 transition-colors hover:text-slate-900 dark:text-zinc-400 dark:hover:text-white"
-            title="Voltar ao Painel Administrativo"
+          <button
+            type="button"
+            onClick={() => {
+              setExitPassword('');
+              setExitError(null);
+              setIsExitModalOpen(true);
+            }}
+            className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-700 transition-colors hover:bg-black/5 hover:text-slate-900 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-white cursor-pointer"
+            title="Sair do KDS (requer senha de liberação)"
           >
-            <span aria-hidden="true">←</span>
-            <span>Painel</span>
-          </Link>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5 text-slate-500 dark:text-zinc-400" aria-hidden="true">
+              <rect width="18" height="11" x="3" y="11" rx="2" ry="2" />
+              <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+            </svg>
+            <span>← Painel</span>
+          </button>
 
-          <div className="h-4 w-px bg-slate-200 dark:bg-white/10" aria-hidden="true" />
+          <div className="h-4 w-px bg-[#DDD9D0] dark:bg-white/10" aria-hidden="true" />
 
           <div className="flex items-baseline gap-2">
             <h1 className="text-base font-black tracking-tight text-slate-900 dark:text-white sm:text-lg">
               {restaurant.name}
             </h1>
-            <span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-bold uppercase tracking-wider text-slate-700 dark:bg-white/10 dark:text-zinc-300">
+            <span className="rounded bg-[#EAE7DF] px-2 py-0.5 text-xs font-bold uppercase tracking-wider text-slate-700 dark:bg-white/10 dark:text-zinc-300">
               KDS
             </span>
           </div>
@@ -312,7 +462,7 @@ export function KdsPage() {
         </div>
 
         {/* Centro: Filtro por Estação (Pílulas) */}
-        <nav className="flex items-center rounded-xl bg-slate-100 p-1 dark:bg-[#27272a]" aria-label="Filtro de estação">
+        <nav className="flex items-center rounded-xl bg-[#EAE7DF] p-1 dark:bg-[#27272a]" aria-label="Filtro de estação">
           <button
             type="button"
             onClick={() => setFilterStation('all')}
@@ -486,24 +636,28 @@ export function KdsPage() {
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
             {/* Coluna 1: Pendentes / A Fazer */}
             <section
-              className="flex flex-col rounded-2xl border border-slate-200 bg-slate-100/80 p-3 shadow-inner dark:border-zinc-800/80 dark:bg-[#12100e]/80 md:p-4"
+              className="flex flex-col rounded-2xl border border-amber-300 dark:border-amber-800/80 bg-white dark:bg-[#18181b] shadow-sm overflow-hidden"
               aria-labelledby="col-pending-heading"
             >
-              <header className="mb-3 flex items-center justify-between border-b border-slate-200 pb-2.5 dark:border-zinc-800">
-                <div className="flex items-center gap-2">
-                  <span className="h-3 w-3 rounded-full bg-amber-500" aria-hidden="true" />
-                  <h2 id="col-pending-heading" className="text-sm font-black uppercase tracking-wider text-slate-900 dark:text-zinc-100">
+              {/* Barra superior sólida na cor temática */}
+              <div className="h-1.5 w-full bg-amber-500" aria-hidden="true" />
+
+              {/* Cabeçalho da Coluna com fundo suave e linha divisória limpa */}
+              <header className="flex items-center justify-between border-b border-amber-200/80 dark:border-amber-800/60 bg-amber-50/70 dark:bg-amber-950/30 px-4 py-3">
+                <div className="flex items-center gap-2.5">
+                  <span className="h-3 w-3 rounded-full bg-amber-500 shadow-2xs" aria-hidden="true" />
+                  <h2 id="col-pending-heading" className="text-sm font-black uppercase tracking-wider text-amber-950 dark:text-amber-200">
                     Pendentes / A Fazer
                   </h2>
                 </div>
-                <span className="rounded-full bg-amber-500/10 px-2.5 py-0.5 text-xs font-black text-amber-700 dark:text-amber-300">
+                <span className="rounded-full bg-amber-500 px-2.5 py-0.5 text-xs font-black text-white shadow-2xs">
                   {pendingItems.length}
                 </span>
               </header>
 
-              <div className="flex flex-col gap-3">
+              <div className="p-3 md:p-4 flex flex-col gap-3 flex-1 bg-zinc-50/40 dark:bg-black/20">
                 {pendingItems.length === 0 ? (
-                  <div className="flex h-40 items-center justify-center rounded-xl border border-dashed border-slate-300 text-center text-xs text-slate-500 dark:border-zinc-800 dark:text-zinc-500">
+                  <div className="flex h-40 items-center justify-center rounded-xl border border-dashed border-amber-200 bg-amber-50/30 text-center text-xs font-medium text-amber-800/80 dark:border-amber-900/40 dark:bg-amber-950/10 dark:text-amber-300/80">
                     Nenhum pedido pendente
                   </div>
                 ) : (
@@ -521,24 +675,28 @@ export function KdsPage() {
 
             {/* Coluna 2: Em Preparo */}
             <section
-              className="flex flex-col rounded-2xl border border-slate-200 bg-slate-100/80 p-3 shadow-inner dark:border-zinc-800/80 dark:bg-[#12100e]/80 md:p-4"
+              className="flex flex-col rounded-2xl border border-blue-300 dark:border-blue-800/80 bg-white dark:bg-[#18181b] shadow-sm overflow-hidden"
               aria-labelledby="col-prep-heading"
             >
-              <header className="mb-3 flex items-center justify-between border-b border-slate-200 pb-2.5 dark:border-zinc-800">
-                <div className="flex items-center gap-2">
-                  <span className="h-3 w-3 rounded-full bg-blue-500" aria-hidden="true" />
-                  <h2 id="col-prep-heading" className="text-sm font-black uppercase tracking-wider text-slate-900 dark:text-zinc-100">
+              {/* Barra superior sólida na cor temática */}
+              <div className="h-1.5 w-full bg-blue-500" aria-hidden="true" />
+
+              {/* Cabeçalho da Coluna com fundo suave e linha divisória limpa */}
+              <header className="flex items-center justify-between border-b border-blue-200/80 dark:border-blue-800/60 bg-blue-50/70 dark:bg-blue-950/30 px-4 py-3">
+                <div className="flex items-center gap-2.5">
+                  <span className="h-3 w-3 rounded-full bg-blue-500 shadow-2xs" aria-hidden="true" />
+                  <h2 id="col-prep-heading" className="text-sm font-black uppercase tracking-wider text-blue-950 dark:text-blue-200">
                     Em Preparo
                   </h2>
                 </div>
-                <span className="rounded-full bg-blue-500/10 px-2.5 py-0.5 text-xs font-black text-blue-700 dark:text-blue-300">
+                <span className="rounded-full bg-blue-500 px-2.5 py-0.5 text-xs font-black text-white shadow-2xs">
                   {preparingItems.length}
                 </span>
               </header>
 
-              <div className="flex flex-col gap-3">
+              <div className="p-3 md:p-4 flex flex-col gap-3 flex-1 bg-zinc-50/40 dark:bg-black/20">
                 {preparingItems.length === 0 ? (
-                  <div className="flex h-40 items-center justify-center rounded-xl border border-dashed border-slate-300 text-center text-xs text-slate-500 dark:border-zinc-800 dark:text-zinc-500">
+                  <div className="flex h-40 items-center justify-center rounded-xl border border-dashed border-blue-200 bg-blue-50/30 text-center text-xs font-medium text-blue-800/80 dark:border-blue-900/40 dark:bg-blue-950/10 dark:text-blue-300/80">
                     Nenhum item em preparo no momento
                   </div>
                 ) : (
@@ -556,24 +714,28 @@ export function KdsPage() {
 
             {/* Coluna 3: Prontos para Entrega */}
             <section
-              className="flex flex-col rounded-2xl border border-slate-200 bg-slate-100/80 p-3 shadow-inner dark:border-zinc-800/80 dark:bg-[#12100e]/80 md:p-4"
+              className="flex flex-col rounded-2xl border border-emerald-300 dark:border-emerald-800/80 bg-white dark:bg-[#18181b] shadow-sm overflow-hidden"
               aria-labelledby="col-ready-heading"
             >
-              <header className="mb-3 flex items-center justify-between border-b border-slate-200 pb-2.5 dark:border-zinc-800">
-                <div className="flex items-center gap-2">
-                  <span className="h-3 w-3 rounded-full bg-emerald-500" aria-hidden="true" />
-                  <h2 id="col-ready-heading" className="text-sm font-black uppercase tracking-wider text-slate-900 dark:text-zinc-100">
+              {/* Barra superior sólida na cor temática */}
+              <div className="h-1.5 w-full bg-emerald-500" aria-hidden="true" />
+
+              {/* Cabeçalho da Coluna com fundo suave e linha divisória limpa */}
+              <header className="flex items-center justify-between border-b border-emerald-200/80 dark:border-emerald-800/60 bg-emerald-50/70 dark:bg-emerald-950/30 px-4 py-3">
+                <div className="flex items-center gap-2.5">
+                  <span className="h-3 w-3 rounded-full bg-emerald-500 shadow-2xs" aria-hidden="true" />
+                  <h2 id="col-ready-heading" className="text-sm font-black uppercase tracking-wider text-emerald-950 dark:text-emerald-200">
                     Prontos para Entrega
                   </h2>
                 </div>
-                <span className="rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-xs font-black text-emerald-700 dark:text-emerald-300">
+                <span className="rounded-full bg-emerald-500 px-2.5 py-0.5 text-xs font-black text-white shadow-2xs">
                   {readyItems.length}
                 </span>
               </header>
 
-              <div className="flex flex-col gap-3">
+              <div className="p-3 md:p-4 flex flex-col gap-3 flex-1 bg-zinc-50/40 dark:bg-black/20">
                 {readyItems.length === 0 ? (
-                  <div className="flex h-40 items-center justify-center rounded-xl border border-dashed border-slate-300 text-center text-xs text-slate-500 dark:border-zinc-800 dark:text-zinc-500">
+                  <div className="flex h-40 items-center justify-center rounded-xl border border-dashed border-emerald-200 bg-emerald-50/30 text-center text-xs font-medium text-emerald-800/80 dark:border-emerald-900/40 dark:bg-emerald-950/10 dark:text-emerald-300/80">
                     Nenhum item aguardando entrega
                   </div>
                 ) : (

@@ -251,6 +251,32 @@ function CatalogContent({
   const productsCount = catalog?.products.length ?? 0;
   const categoriesCount = categories.length;
 
+  // Quando estiver no modo de edição/criação, renderiza exclusivamente o editor,
+  // ocultando o cabeçalho duplicado "Seu catálogo", abas de listagem e botões de topo.
+  if (selection && catalog) {
+    return (
+      <div className="space-y-6">
+        {notice && (
+          <div
+            role="status"
+            className="rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 p-4 text-xs sm:text-sm text-emerald-800 dark:text-emerald-300 font-medium leading-relaxed"
+          >
+            {notice}
+          </div>
+        )}
+        <CatalogEditor
+          key={`${selection.kind}:${selection.entry?.id ?? "new"}`}
+          selection={selection}
+          categories={categories}
+          restaurantSlug={restaurantSlug}
+          restaurantId={restaurantId}
+          onSaved={saved}
+          onCancel={() => setSelection(null)}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* 1. CABEÇALHO DA SEÇÃO */}
@@ -374,18 +400,8 @@ function CatalogContent({
         </div>
       )}
 
-      {/* Editor Modal / Formulário */}
-      {selection && catalog ? (
-        <CatalogEditor
-          key={`${selection.kind}:${selection.entry?.id ?? "new"}`}
-          selection={selection}
-          categories={categories}
-          restaurantSlug={restaurantSlug}
-          restaurantId={restaurantId}
-          onSaved={saved}
-          onCancel={() => setSelection(null)}
-        />
-      ) : loading ? (
+      {/* Conteúdo do catálogo */}
+      {loading ? (
         <div role="status" className="p-8 text-center text-sm font-medium text-zinc-500">
           Carregando catálogo…
         </div>
@@ -475,11 +491,21 @@ function CatalogContent({
                       firstProductWithImage?.images.find(
                         (i) => i.id === firstProductWithImage.cover_image_id,
                       ) || firstProductWithImage?.images[0];
-                    const storedCustomImage =
+                    let storedCustomImage =
                       typeof window !== "undefined"
                         ? localStorage.getItem(`elozi_cat_img_${restaurantId}_${category.id}`) ||
                           localStorage.getItem(`elozi_cat_img_${category.id}`)
                         : null;
+                    // Ignora URLs temporárias revogadas ou strings inválidas
+                    if (
+                      !storedCustomImage ||
+                      storedCustomImage.startsWith("blob:") ||
+                      storedCustomImage === "undefined" ||
+                      storedCustomImage === "null" ||
+                      !storedCustomImage.trim()
+                    ) {
+                      storedCustomImage = null;
+                    }
                     const categoryImageUrl =
                       storedCustomImage || (category as any).image_url || cover?.url;
 
@@ -507,12 +533,42 @@ function CatalogContent({
                             className="w-24 h-24 lg:w-28 lg:h-28 rounded-full overflow-hidden border-2 border-[#610000]/15 group-hover:border-[#610000] shadow-md transition-all bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#610000]/30"
                           >
                             {categoryImageUrl ? (
-                              <img
-                                src={categoryImageUrl}
-                                alt={category.name}
-                                loading="lazy"
-                                className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                              />
+                              <>
+                                <img
+                                  src={categoryImageUrl}
+                                  alt={category.name}
+                                  loading="lazy"
+                                  onError={(e) => {
+                                    e.currentTarget.style.display = "none";
+                                    const parent = e.currentTarget.parentElement;
+                                    const fallback = parent?.querySelector(".category-fallback-icon") as HTMLElement | null;
+                                    if (fallback) {
+                                      fallback.style.display = "flex";
+                                      fallback.classList.remove("hidden");
+                                    }
+                                  }}
+                                  className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                                />
+                                <div
+                                  style={{ display: "none" }}
+                                  className="category-fallback-icon flex-col items-center justify-center text-[#610000]/50 dark:text-red-400/50"
+                                >
+                                  <svg
+                                    className="w-8 h-8 lg:w-9 lg:h-9"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="1.75"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    aria-hidden="true"
+                                  >
+                                    <path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2" />
+                                    <path d="M7 2v20" />
+                                    <path d="M21 15V2v0a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7" />
+                                  </svg>
+                                </div>
+                              </>
                             ) : (
                               <div className="flex flex-col items-center justify-center text-[#610000]/50 dark:text-red-400/50">
                                 <svg
