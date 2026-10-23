@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Link } from 'react-router';
+import { useLocation, useNavigate } from 'react-router';
 import { ThemeToggleButton } from '../theme/ThemeToggleButton';
 import {
   fetchUnreadAlerts,
@@ -15,6 +15,8 @@ import {
   playLowStockSound,
 } from '../../lib/soundAlerts';
 import { SoundSettingsControl } from '../alerts/SoundSettingsControl';
+import { signOutStaff } from '../auth/staffAuth';
+import { useTheme } from '../theme/ThemeContext';
 
 interface AdminTopbarProps {
   restaurant: RestaurantIdentity;
@@ -150,31 +152,70 @@ function renderAlertIcon(type: RestaurantAlert['type'], size = 18) {
 }
 
 export function AdminTopbar({ restaurant }: AdminTopbarProps) {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const isKds = location.pathname.includes('/kds');
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
+
   const [alerts, setAlerts] = useState<RestaurantAlert[]>([]);
-  const [toasts, setToasts] = useState<RestaurantAlert[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const [markingId, setMarkingId] = useState<string | null>(null);
   const [markingAll, setMarkingAll] = useState(false);
+  const [toasts, setToasts] = useState<RestaurantAlert[]>([]);
+
+  // Menu Dropdown do Administrador
+  const [adminMenuOpen, setAdminMenuOpen] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
+  const adminMenuRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const loadAlerts = async () => {
-    try {
-      const data = await fetchUnreadAlerts(restaurant.id);
-      setAlerts(data);
-    } catch (err) {
-      console.error('Falha ao carregar alertas:', err);
-    }
-  };
-
+  // Fechar dropdown de alertas e de admin ao clicar fora
   useEffect(() => {
-    void loadAlerts();
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+      if (adminMenuRef.current && !adminMenuRef.current.contains(event.target as Node)) {
+        setAdminMenuOpen(false);
+      }
+    }
+    if (isOpen || adminMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isOpen, adminMenuOpen]);
+
+  // Carga inicial de alertas não lidos
+  useEffect(() => {
+    let active = true;
+    void fetchUnreadAlerts(restaurant.id)
+      .then((data) => {
+        if (active) setAlerts(data);
+      })
+      .catch((err) => {
+        console.error('Erro ao buscar alertas:', err);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [restaurant.id]);
+
+  // Realtime subscription para novos alertas
+  useEffect(() => {
     const unsubscribe = subscribeToAlerts(
       restaurant.id,
       () => {
-        void loadAlerts();
+        void fetchUnreadAlerts(restaurant.id)
+          .then((data) => setAlerts(data))
+          .catch((err) => console.error('Erro ao buscar alertas:', err));
       },
-      (newAlert) => {
-        // Tocar áudio de acordo com a natureza do alerta
+      (newAlert: RestaurantAlert) => {
+        setAlerts((prev) => [newAlert, ...prev.filter((a) => a.id !== newAlert.id)]);
+
         if (newAlert.type === 'dish_ready') {
           playDishReadySound();
         } else if (newAlert.type === 'call_waiter' || newAlert.type === 'close_table_request') {
@@ -185,7 +226,6 @@ export function AdminTopbar({ restaurant }: AdminTopbarProps) {
           playLowStockSound();
         }
 
-        // Exibir Toast flutuante com auto-dismiss em 6 segundos
         setToasts((prev) => [newAlert, ...prev.filter((t) => t.id !== newAlert.id)].slice(0, 4));
         setTimeout(() => {
           setToasts((prev) => prev.filter((t) => t.id !== newAlert.id));
@@ -200,21 +240,6 @@ export function AdminTopbar({ restaurant }: AdminTopbarProps) {
   const removeToast = (id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
-
-  // Fechar dropdown ao clicar fora
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
-    }
-    if (isOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [isOpen]);
 
   const handleMarkAsRead = async (alertId: string) => {
     setMarkingId(alertId);
@@ -240,36 +265,62 @@ export function AdminTopbar({ restaurant }: AdminTopbarProps) {
     }
   };
 
+  async function handleLogout() {
+    setLoggingOut(true);
+    try {
+      await signOutStaff();
+      navigate(`/${restaurant.slug}/acesso`, { replace: true });
+    } catch (err) {
+      console.error('Erro ao sair:', err);
+    } finally {
+      setLoggingOut(false);
+    }
+  }
+
   const unreadCount = alerts.length;
 
   return (
-    <div className="admin-topbar print:hidden" style={{ position: 'relative' }}>
-      <span>Administração do restaurante</span>
+    <header
+      className={`admin-topbar print:hidden px-6 py-4 flex items-center justify-between gap-4 border-b transition-colors duration-200 ${
+        isDark
+          ? 'bg-[#18181b] border-zinc-800 text-white'
+          : 'bg-white border-zinc-200/80 text-zinc-900 shadow-2xs'
+      }`}
+    >
+      {/* Lado Esquerdo: Título e Subtítulo */}
+      <div>
+        <h1 className="text-lg sm:text-xl font-extrabold tracking-tight text-zinc-900 dark:text-white leading-tight">
+          Administração
+        </h1>
+        <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+          Gerencie o seu restaurante
+        </p>
+      </div>
 
-      <div className="admin-topbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-        {/* Controle de Áudio e Toques Personalizáveis */}
-        <SoundSettingsControl />
+      {/* Lado Direito: Indicador do restaurante, sons, notificações, tema e perfil */}
+      <div className="flex items-center gap-3 sm:gap-4">
+        {/* Indicador do restaurante ativo com bolinha verde (● NOMA) */}
+        <div
+          className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${
+            isDark
+              ? 'border-emerald-500/30 bg-emerald-950/40 text-emerald-400'
+              : 'border-emerald-300 bg-emerald-50 text-emerald-800'
+          }`}
+        >
+          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+          <span className="uppercase tracking-wider font-extrabold">{restaurant.name}</span>
+        </div>
+
+        {/* Controle de Áudio e Toques Personalizáveis: EXCLUSIVO para KDS */}
+        {isKds && <SoundSettingsControl />}
 
         {/* Central de Notificações / Alertas */}
-        <div ref={dropdownRef} style={{ position: 'relative' }}>
+        <div ref={dropdownRef} className="relative">
           <button
             type="button"
             onClick={() => setIsOpen((prev) => !prev)}
             aria-label={`Central de Alertas: ${unreadCount} notificações não lidas`}
-            style={{
-              position: 'relative',
-              background: 'transparent',
-              border: 'none',
-              cursor: 'pointer',
-              padding: '6px',
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: 'var(--color-text-main, #333)',
-              borderRadius: '6px',
-              transition: 'background-color 0.15s ease',
-            }}
-            className="hover:bg-black/5 dark:hover:bg-white/10"
+            className="relative p-2 rounded-xl text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
           >
             <svg
               width="20"
@@ -286,26 +337,7 @@ export function AdminTopbar({ restaurant }: AdminTopbarProps) {
               <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
             </svg>
             {unreadCount > 0 && (
-              <span
-                style={{
-                  position: 'absolute',
-                  top: '1px',
-                  right: '1px',
-                  backgroundColor: '#ef4444',
-                  color: '#ffffff',
-                  fontSize: '11px',
-                  fontWeight: 700,
-                  minWidth: '17px',
-                  height: '17px',
-                  borderRadius: '9999px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  padding: '0 4px',
-                  lineHeight: 1,
-                  boxShadow: '0 0 0 2px var(--color-bg-panel, #ffffff)',
-                }}
-              >
+              <span className="absolute top-1 right-1 bg-red-600 text-white text-[10px] font-bold min-w-[16px] h-4 rounded-full flex items-center justify-center px-1 leading-none shadow-xs">
                 {unreadCount > 99 ? '99+' : unreadCount}
               </span>
             )}
@@ -314,46 +346,21 @@ export function AdminTopbar({ restaurant }: AdminTopbarProps) {
           {/* Dropdown de Alertas */}
           {isOpen && (
             <div
-              style={{
-                position: 'absolute',
-                top: 'calc(100% + 8px)',
-                right: 0,
-                width: '360px',
-                maxHeight: '440px',
-                backgroundColor: 'var(--color-bg-panel, #ffffff)',
-                color: 'var(--color-text-main, #1c1917)',
-                border: '1px solid var(--color-border, #e5e7eb)',
-                borderRadius: '8px',
-                boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
-                zIndex: 100,
-                display: 'flex',
-                flexDirection: 'column',
-                overflow: 'hidden',
-              }}
+              className={`absolute top-[calc(100%+8px)] right-0 w-80 sm:w-96 max-h-[440px] rounded-xl shadow-2xl border p-0 z-50 flex flex-col overflow-hidden ${
+                isDark
+                  ? 'bg-zinc-900 border-zinc-700 text-zinc-100'
+                  : 'bg-white border-zinc-200 text-zinc-900'
+              }`}
             >
               <div
-                style={{
-                  padding: '12px 16px',
-                  borderBottom: '1px solid var(--color-border, #e5e7eb)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  backgroundColor: 'var(--color-bg-subtle, #f9fafb)',
-                }}
+                className={`p-3.5 border-b flex items-center justify-between ${
+                  isDark ? 'bg-zinc-800/60 border-zinc-700' : 'bg-zinc-50 border-zinc-200'
+                }`}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ fontWeight: 600, fontSize: '14px' }}>Alertas do Restaurante</span>
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-xs uppercase tracking-wide">Alertas do Restaurante</span>
                   {unreadCount > 0 && (
-                    <span
-                      style={{
-                        fontSize: '11px',
-                        fontWeight: 600,
-                        backgroundColor: '#fee2e2',
-                        color: '#991b1b',
-                        padding: '2px 6px',
-                        borderRadius: '9999px',
-                      }}
-                    >
+                    <span className="text-[11px] font-bold bg-red-100 text-red-800 dark:bg-red-950/60 dark:text-red-300 px-2 py-0.5 rounded-full">
                       {unreadCount} novo{unreadCount > 1 ? 's' : ''}
                     </span>
                   )}
@@ -363,93 +370,52 @@ export function AdminTopbar({ restaurant }: AdminTopbarProps) {
                     type="button"
                     onClick={() => void handleMarkAllAsRead()}
                     disabled={markingAll}
-                    style={{
-                      fontSize: '12px',
-                      color: 'var(--color-primary, #2563eb)',
-                      background: 'none',
-                      border: 'none',
-                      cursor: 'pointer',
-                      padding: '2px 4px',
-                      fontWeight: 500,
-                    }}
+                    className="text-xs text-blue-600 hover:text-blue-700 font-semibold cursor-pointer"
                   >
-                    {markingAll ? 'Marcando…' : 'Marcar todos como lidos'}
+                    {markingAll ? 'Marcando…' : 'Marcar todos'}
                   </button>
                 )}
               </div>
 
-              <div style={{ overflowY: 'auto', flex: 1, maxHeight: '340px' }}>
+              <div className="overflow-y-auto flex-1 max-h-[340px] divide-y divide-zinc-100 dark:divide-zinc-800">
                 {alerts.length === 0 ? (
-                  <div
-                    style={{
-                      padding: '32px 16px',
-                      textAlign: 'center',
-                      color: 'var(--color-text-muted, #6b7280)',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      gap: '8px',
-                    }}
-                  >
+                  <div className="p-8 text-center text-zinc-400 dark:text-zinc-500 flex flex-col items-center gap-2">
                     <svg
-                      width="32"
-                      height="32"
+                      width="28"
+                      height="28"
                       viewBox="0 0 24 24"
                       fill="none"
                       stroke="currentColor"
-                      strokeWidth="1.75"
+                      strokeWidth="1.5"
                       strokeLinecap="round"
                       strokeLinejoin="round"
-                      style={{ opacity: 0.5 }}
+                      className="opacity-40"
                       aria-hidden="true"
                     >
                       <circle cx="12" cy="12" r="10" />
                       <polyline points="9 11 12 14 22 4" />
                       <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
                     </svg>
-                    <span style={{ fontSize: '13px', fontWeight: 500 }}>Nenhum alerta pendente</span>
-                    <span style={{ fontSize: '11px', opacity: 0.8 }}>O estoque e a operação estão regulares.</span>
+                    <span className="text-xs font-semibold">Nenhum alerta pendente</span>
                   </div>
                 ) : (
                   alerts.map((alert) => (
                     <div
                       key={alert.id}
-                      style={{
-                        padding: '12px 16px',
-                        borderBottom: '1px solid var(--color-border-subtle, #f3f4f6)',
-                        display: 'flex',
-                        alignItems: 'flex-start',
-                        gap: '12px',
-                        transition: 'background-color 0.15s ease',
-                      }}
-                      className="hover:bg-black/5 dark:hover:bg-white/5"
+                      className="p-3.5 flex items-start gap-3 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors"
                     >
-                      <div
-                        style={{
-                          marginTop: '2px',
-                          color: getAlertMeta(alert.type, restaurant.slug).color,
-                          flexShrink: 0,
-                        }}
-                      >
+                      <div className="mt-0.5 shrink-0" style={{ color: getAlertMeta(alert.type, restaurant.slug).color }}>
                         {renderAlertIcon(alert.type)}
                       </div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <p style={{ margin: 0, fontSize: '13px', fontWeight: 600, color: 'var(--color-text-main, #111827)' }}>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-bold text-zinc-900 dark:text-white leading-tight">
                           {alert.title}
                         </p>
-                        <p
-                          style={{
-                            margin: '3px 0 0',
-                            fontSize: '12px',
-                            color: 'var(--color-text-muted, #4b5563)',
-                            lineHeight: 1.4,
-                          }}
-                        >
+                        <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5 leading-snug">
                           {alert.message}
                         </p>
-                        <span style={{ fontSize: '10px', color: 'var(--color-text-muted, #9ca3af)', display: 'block', marginTop: '4px' }}>
-                          {new Date(alert.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} •{' '}
-                          {new Date(alert.created_at).toLocaleDateString('pt-BR')}
+                        <span className="text-[10px] text-zinc-400 block mt-1">
+                          {new Date(alert.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
                         </span>
                       </div>
                       <button
@@ -458,28 +424,9 @@ export function AdminTopbar({ restaurant }: AdminTopbarProps) {
                         disabled={markingId === alert.id}
                         title="Marcar como lido"
                         aria-label="Marcar como lido"
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          cursor: 'pointer',
-                          padding: '4px',
-                          color: 'var(--color-text-muted, #9ca3af)',
-                          borderRadius: '4px',
-                          flexShrink: 0,
-                        }}
-                        className="hover:text-green-600 hover:bg-green-50 dark:hover:bg-green-950"
+                        className="p-1 text-zinc-400 hover:text-emerald-600 rounded transition-colors"
                       >
-                        <svg
-                          width="16"
-                          height="16"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          aria-hidden="true"
-                        >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                           <polyline points="20 6 9 17 4 12" />
                         </svg>
                       </button>
@@ -491,55 +438,83 @@ export function AdminTopbar({ restaurant }: AdminTopbarProps) {
           )}
         </div>
 
-        {/* Ver cardápio */}
-        <Link
-          to={`/${restaurant.slug}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-        >
-          <span>Ver cardápio</span>
-          <svg
-            width="12"
-            height="12"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.75"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-            <polyline points="15 3 21 3 21 9" />
-            <line x1="10" y1="14" x2="21" y2="3" />
-          </svg>
-        </Link>
-
         {/* Alternador de tema */}
         <ThemeToggleButton className="admin-theme-toggle" />
 
-        {/* Perfil */}
-        <span className="admin-profile" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.75"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
+        {/* Avatar / Botão do Administrador com Dropdown Sair exclusivo */}
+        <div ref={adminMenuRef} className="relative">
+          <button
+            type="button"
+            onClick={() => setAdminMenuOpen((prev) => !prev)}
+            aria-label="Menu do Administrador"
+            aria-expanded={adminMenuOpen}
+            className={`flex items-center gap-2 p-1.5 rounded-xl border transition-all cursor-pointer ${
+              isDark
+                ? 'border-zinc-700 bg-zinc-800/80 hover:bg-zinc-800 text-white'
+                : 'border-zinc-200 bg-white hover:bg-zinc-50 text-zinc-900 shadow-2xs'
+            }`}
           >
-            <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
-            <circle cx="12" cy="7" r="4" />
-          </svg>
-          Administrador
-        </span>
+            {/* Avatar Vinho Escuro com 'A' */}
+            <div className="w-7 h-7 rounded-lg bg-[#610000] text-white flex items-center justify-center font-extrabold text-xs shadow-2xs">
+              A
+            </div>
+            <span className="hidden md:inline-block text-xs font-bold text-zinc-800 dark:text-zinc-200">
+              Administrador
+            </span>
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className={`text-zinc-400 transition-transform ${adminMenuOpen ? 'rotate-180' : ''}`}
+              aria-hidden="true"
+            >
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
+          </button>
+
+          {/* Dropdown exclusivo com ação de Sair */}
+          {adminMenuOpen && (
+            <div
+              className={`absolute right-0 mt-2 w-48 rounded-xl shadow-xl border p-1.5 z-50 transition-all ${
+                isDark
+                  ? 'bg-zinc-900 border-zinc-700 text-white shadow-black/50'
+                  : 'bg-white border-zinc-200 text-zinc-900 shadow-zinc-900/15'
+              }`}
+            >
+              <button
+                type="button"
+                disabled={loggingOut}
+                onClick={() => void handleLogout()}
+                className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-xs font-bold text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors text-left cursor-pointer disabled:opacity-50"
+              >
+                <svg
+                  width="15"
+                  height="15"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                  <polyline points="16 17 21 12 16 7" />
+                  <line x1="21" y1="12" x2="9" y2="12" />
+                </svg>
+                <span>{loggingOut ? 'Saindo…' : 'Sair'}</span>
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Toasts Flutuantes de Alertas em Tempo Real (6 segundos auto-dismiss) */}
+      {/* Toasts Flutuantes de Alertas em Tempo Real */}
       {toasts.length > 0 && (
         <div
           style={{
@@ -558,18 +533,17 @@ export function AdminTopbar({ restaurant }: AdminTopbarProps) {
         >
           {toasts.map((toast) => {
             const meta = getAlertMeta(toast.type, restaurant.slug);
-
             return (
               <div
                 key={toast.id}
                 style={{
                   pointerEvents: 'auto',
-                  backgroundColor: 'var(--color-bg-panel, #ffffff)',
-                  color: 'var(--color-text-main, #1c1917)',
+                  backgroundColor: isDark ? '#18181b' : '#ffffff',
+                  color: isDark ? '#f4f4f5' : '#18181b',
                   borderRadius: '12px',
-                  border: '1px solid var(--color-border, #e5e7eb)',
+                  border: `1px solid ${isDark ? '#27272a' : '#e5e7eb'}`,
                   borderLeft: `4px solid ${meta.color}`,
-                  boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
+                  boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.15)',
                   padding: '12px 14px',
                   display: 'flex',
                   alignItems: 'flex-start',
@@ -580,40 +554,17 @@ export function AdminTopbar({ restaurant }: AdminTopbarProps) {
                   {renderAlertIcon(toast.type, 20)}
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <p
-                    style={{
-                      margin: 0,
-                      fontSize: '13px',
-                      fontWeight: 600,
-                      color: 'var(--color-text-main, #111827)',
-                    }}
-                  >
-                    {toast.title}
-                  </p>
-                  <p
-                    style={{
-                      margin: '2px 0 6px',
-                      fontSize: '12px',
-                      color: 'var(--color-text-muted, #4b5563)',
-                      lineHeight: 1.4,
-                    }}
-                  >
-                    {toast.message}
-                  </p>
+                  <p style={{ margin: 0, fontSize: '13px', fontWeight: 600 }}>{toast.title}</p>
+                  <p style={{ margin: '2px 0 6px', fontSize: '12px', opacity: 0.8, lineHeight: 1.4 }}>{toast.message}</p>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Link
-                      to={meta.targetLink}
+                    <a
+                      href={meta.targetLink}
                       onClick={() => removeToast(toast.id)}
-                      style={{
-                        fontSize: '11px',
-                        fontWeight: 600,
-                        color: meta.color,
-                        textDecoration: 'none',
-                      }}
+                      style={{ fontSize: '11px', fontWeight: 600, color: meta.color, textDecoration: 'none' }}
                       className="hover:underline"
                     >
                       {meta.linkLabel} →
-                    </Link>
+                    </a>
                   </div>
                 </div>
                 <button
@@ -625,23 +576,12 @@ export function AdminTopbar({ restaurant }: AdminTopbarProps) {
                     border: 'none',
                     cursor: 'pointer',
                     padding: '2px',
-                    color: 'var(--color-text-muted, #9ca3af)',
+                    color: '#9ca3af',
                     borderRadius: '4px',
                     flexShrink: 0,
                   }}
-                  className="hover:text-stone-700 dark:hover:text-stone-300"
                 >
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden="true"
-                  >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                     <line x1="18" y1="6" x2="6" y2="18" />
                     <line x1="6" y1="6" x2="18" y2="18" />
                   </svg>
@@ -651,6 +591,6 @@ export function AdminTopbar({ restaurant }: AdminTopbarProps) {
           })}
         </div>
       )}
-    </div>
+    </header>
   );
 }

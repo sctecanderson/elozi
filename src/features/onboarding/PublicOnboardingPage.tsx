@@ -34,6 +34,13 @@ interface OnboardingResult {
 export function PublicOnboardingPage() {
   const navigate = useNavigate();
 
+  const currentHost =
+    typeof window !== 'undefined' &&
+    window.location.host &&
+    !window.location.host.includes('localhost')
+      ? window.location.host
+      : 'elozi.vercel.app';
+
   const [restaurantName, setRestaurantName] = useState('');
   const [slug, setSlug] = useState('');
   const [slugTouched, setSlugTouched] = useState(false);
@@ -288,7 +295,7 @@ export function PublicOnboardingPage() {
               </label>
               <div className="flex items-center rounded-xl border border-stone-300 bg-stone-50/70 overflow-hidden focus-within:border-red-600 focus-within:bg-white focus-within:ring-2 focus-within:ring-red-600/20 transition-all">
                 <span className="px-3.5 py-3 text-sm font-mono text-zinc-500 bg-stone-100 border-r border-stone-200 select-none">
-                  elozi.com/
+                  {currentHost}/
                 </span>
                 <input
                   id="onb-slug"
@@ -300,8 +307,8 @@ export function PublicOnboardingPage() {
                   className="w-full px-3.5 py-3 text-sm font-mono font-semibold text-zinc-900 placeholder-zinc-400 bg-transparent focus:outline-none"
                 />
               </div>
-              <p className="text-xs text-zinc-500 mt-1.5">
-                Seu painel ficará em: <strong className="text-zinc-800 font-mono">/{slug || 'seu-restaurante'}/admin</strong>
+              <p className="text-xs text-zinc-500 mt-1.5 leading-relaxed">
+                Cardápio: <strong className="text-zinc-800 font-mono">{currentHost}/{slug || 'seu-restaurante'}</strong> • Painel: <strong className="text-zinc-800 font-mono">{currentHost}/{slug || 'seu-restaurante'}/admin</strong>
               </p>
             </div>
 
@@ -316,7 +323,7 @@ export function PublicOnboardingPage() {
               <input
                 id="onb-phone"
                 type="tel"
-                placeholder="(11) 99999-9999"
+                placeholder="(47) 99999-9999"
                 value={phone}
                 onChange={(e) => setPhone(formatPhoneBR(e.target.value))}
                 className="w-full rounded-xl border border-stone-300 bg-stone-50/70 px-4 py-3 text-sm font-medium text-zinc-900 placeholder-zinc-400 focus:bg-white focus:border-red-600 focus:outline-none focus:ring-2 focus:ring-red-600/20 transition-all"

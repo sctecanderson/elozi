@@ -397,9 +397,11 @@ export function App() {
     <Routes>
       <Route path="/" element={<LandingPage />} />
       <Route path="login" element={<Suspense fallback={<p role="status" className="shell py-8">Carregando…</p>}><PlatformAccessPage /></Suspense>} />
+      <Route path="acesso" element={<Suspense fallback={<p role="status" className="shell py-8">Carregando…</p>}><PlatformAccessPage /></Suspense>} />
       <Route path="convite" element={<Suspense fallback={<p role="status" className="shell py-8">Carregando convite…</p>}><StaffInvitationPage /></Suspense>} />
       <Route path="redefinir-senha" element={<Suspense fallback={<p role="status" className="shell py-8">Carregando…</p>}><ResetPasswordPage /></Suspense>} />
       <Route path="criar-conta" element={<Suspense fallback={<p role="status" className="shell py-8">Carregando cadastro…</p>}><PublicOnboardingPage /></Suspense>} />
+      <Route path=":restaurantSlug/acesso" element={<Suspense fallback={<p role="status" className="shell py-8">Carregando…</p>}><PlatformAccessPage /></Suspense>} />
       <Route
         path="plataforma"
         element={
@@ -439,7 +441,7 @@ export function App() {
           <Route path="explorar" element={<ExplorePage />} />
         </Route>
         <Route element={<RestaurantLayout />}>
-          <Route path="acesso" element={<Access />} />
+          <Route path="acesso" element={<PlatformAccessPage />} />
           <Route element={<RequireStaffAccess />}>
             <Route path="equipe" element={<StaffServicePage />} />
             <Route path="equipe/historico" element={<StaffHistoryPage />} />

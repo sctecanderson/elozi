@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router';
+import { supabase } from '../../lib/supabase';
 import { QRCodeSVG } from 'qrcode.react';
 
 function IconSun({ className = 'w-4 h-4' }: { className?: string }) {
@@ -167,6 +168,41 @@ const SEGMENTS: { label: string; icon: SegmentIconType }[] = [
 ];
 
 export function LandingPage() {
+  const [panelUrl, setPanelUrl] = useState('/login');
+
+  useEffect(() => {
+    let active = true;
+    async function checkActiveSession() {
+      try {
+        const { data } = await supabase.auth.getSession();
+        if (data.session && !data.session.user.is_anonymous) {
+          const { data: members } = await supabase
+            .from('restaurant_members')
+            .select('restaurant_id, role, active')
+            .eq('active', true);
+          if (members && members.length > 0) {
+            const target = members.find((m) => m.role === 'admin') || members[0];
+            const { data: rest } = await supabase
+              .from('restaurants')
+              .select('slug, active')
+              .eq('id', target.restaurant_id)
+              .eq('active', true)
+              .maybeSingle();
+            if (active && rest?.slug) {
+              setPanelUrl(target.role === 'waiter' ? `/${rest.slug}/garcom` : `/${rest.slug}/admin`);
+            }
+          }
+        }
+      } catch {
+        // ignora erro silencioso
+      }
+    }
+    void checkActiveSession();
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const [darkTheme, setDarkTheme] = useState(() => {
     if (typeof window === 'undefined') return false;
     try {
@@ -229,7 +265,7 @@ export function LandingPage() {
           </button>
 
           <Link
-            to="/login"
+            to={panelUrl}
             className="inline-flex items-center gap-1.5 rounded-full bg-[#E51E25] hover:bg-red-700 !text-white text-white hover:!text-white hover:text-white dark:!text-white dark:text-white font-semibold text-sm px-6 py-2.5 shadow-sm transition-all"
           >
             <span className="!text-white text-white">Entrar</span>
@@ -291,7 +327,7 @@ export function LandingPage() {
               </Link>
 
               <Link
-                to="/login"
+                to={panelUrl}
                 className={`inline-flex items-center justify-center rounded-full border font-bold text-sm sm:text-[15px] px-7 py-3.5 transition-all ${darkTheme
                   ? 'border-zinc-700 bg-zinc-900 text-zinc-100 hover:bg-zinc-800'
                   : 'border-zinc-400/90 bg-white/40 text-zinc-900 hover:bg-white/80'
