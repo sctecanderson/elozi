@@ -32,7 +32,7 @@ const PLAN_LABELS: Record<string, string> = {
   premium: "Premium",
 };
 
-export type TableStatusType = "occupied" | "free" | "waiting" | "locked";
+export type TableStatusType = "occupied" | "free" | "waiting" | "locked" | "reserved";
 
 export interface TableItemView {
   id: string;
@@ -44,7 +44,7 @@ export interface TableItemView {
   totalFormatted: string;
   totalInCents: number;
   itemsSummary?: string;
-  kitchenStatus?: "Em preparo" | "À mesa" | "Em atendimento" | "Conta solicitada";
+  kitchenStatus?: "Em preparo" | "À mesa" | "Em atendimento" | "Conta solicitada" | "Mesa reservada";
   active: boolean;
   visitId: string | null;
   billPending: boolean;
@@ -91,7 +91,7 @@ export function TablesPage() {
   // Filtros
   const [searchQuery, setSearchQuery] = useState("");
   const [activePill, setActivePill] = useState<
-    "all" | "occupied" | "free" | "waiting" | "locked"
+    "all" | "occupied" | "free" | "waiting" | "locked" | "reserved"
   >("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [areaFilter, setAreaFilter] = useState("all");
@@ -338,39 +338,55 @@ export function TablesPage() {
   // Mapeamento 100% REAL de cada mesa vinda do Supabase
   const displayTables: TableItemView[] = useMemo(() => {
     return tables.map((t) => {
+      const activeReservation = reservations.find((res) => res.tableNumber === t.tableNumber);
       const isLocked = !t.active || !!t.isLockedByPlan;
       const isWaiting = t.billPending;
       const isOccupied = !!t.visitId && !isWaiting;
+      const isReserved = !isLocked && !isWaiting && !isOccupied && !!activeReservation;
 
       let status: TableStatusType = "free";
       if (isLocked) status = "locked";
       else if (isWaiting) status = "waiting";
       else if (isOccupied) status = "occupied";
+      else if (isReserved) status = "reserved";
 
       const visitInfo = t.visitId ? visitsMap.get(t.visitId) : null;
-      const timeElapsed = isOccupied || isWaiting ? formatElapsedTime(visitInfo?.opened_at) : "-";
+      const timeElapsed =
+        isOccupied || isWaiting
+          ? formatElapsedTime(visitInfo?.opened_at)
+          : isReserved && activeReservation?.time
+          ? `Às ${activeReservation.time}`
+          : "-";
       const totalFormatted =
         t.totalInCents > 0 ? money.format(t.totalInCents / 100) : "-";
 
       let kitchenStatus: TableItemView["kitchenStatus"] = undefined;
       if (isWaiting) kitchenStatus = "Conta solicitada";
       else if (isOccupied) kitchenStatus = "Em atendimento";
+      else if (isReserved) kitchenStatus = "Mesa reservada";
+
+      const customerName =
+        visitInfo?.client_name || (isReserved && activeReservation?.customerName) || "-";
+
+      const itemsSummary =
+        visitInfo?.items_count && visitInfo.items_count > 0
+          ? `${visitInfo.items_count} item(ns) lançado(s)`
+          : t.tabCount > 0
+          ? `${t.tabCount} comanda(s)`
+          : isReserved && activeReservation
+          ? `${activeReservation.guestsCount || 1} pessoa(s)${activeReservation.phone ? ` • ${activeReservation.phone}` : ""}`
+          : undefined;
 
       return {
         id: t.id,
         tableNumber: t.tableNumber,
         label: t.label?.trim() || "Salão",
         status,
-        customerName: visitInfo?.client_name || "-",
+        customerName,
         timeElapsed,
         totalFormatted,
         totalInCents: t.totalInCents || 0,
-        itemsSummary:
-          visitInfo?.items_count && visitInfo.items_count > 0
-            ? `${visitInfo.items_count} item(ns) lançado(s)`
-            : t.tabCount > 0
-            ? `${t.tabCount} comanda(s)`
-            : undefined,
+        itemsSummary,
         kitchenStatus,
         active: t.active,
         visitId: t.visitId,
@@ -379,7 +395,7 @@ export function TablesPage() {
         revision: t.revision,
       };
     }).sort((a, b) => a.tableNumber - b.tableNumber);
-  }, [tables, visitsMap]);
+  }, [tables, visitsMap, reservations]);
 
   // Métricas calculadas exclusivamente a partir dos dados reais
   const metrics = useMemo(() => {
@@ -388,10 +404,12 @@ export function TablesPage() {
     const waiting = displayTables.filter((t) => t.status === "waiting").length;
     const free = displayTables.filter((t) => t.status === "free").length;
     const locked = displayTables.filter((t) => t.status === "locked").length;
+    const reserved = displayTables.filter((t) => t.status === "reserved").length;
 
     const occupiedPercent = total > 0 ? Math.round((occupied / total) * 100) : 0;
     const waitingPercent = total > 0 ? Math.round((waiting / total) * 100) : 0;
     const freePercent = total > 0 ? Math.round((free / total) * 100) : 0;
+    const reservedPercent = total > 0 ? Math.round((reserved / total) * 100) : 0;
 
     return {
       total,
@@ -399,9 +417,11 @@ export function TablesPage() {
       waiting,
       free,
       locked,
+      reserved,
       occupiedPercent,
       waitingPercent,
       freePercent,
+      reservedPercent,
     };
   }, [displayTables]);
 
@@ -1074,6 +1094,7 @@ export function TablesPage() {
               <option value="free">Livres</option>
               <option value="waiting">Em espera</option>
               <option value="locked">Bloqueadas</option>
+              <option value="reserved">Reservadas</option>
             </select>
           </div>
 
@@ -1198,6 +1219,21 @@ export function TablesPage() {
           >
             Bloqueadas ({metrics.locked})
           </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setActivePill("reserved");
+              setCurrentPage(1);
+            }}
+            className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+              activePill === "reserved"
+                ? "bg-[#610000] text-white shadow-xs"
+                : "bg-white dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800"
+            }`}
+          >
+            Reservadas ({metrics.reserved})
+          </button>
         </div>
       </div>
 
@@ -1219,13 +1255,30 @@ export function TablesPage() {
                 <p className="text-base font-semibold text-zinc-700 dark:text-zinc-300">
                   {tables.length === 0
                     ? "Nenhuma mesa cadastrada no seu restaurante"
+                    : activePill === "reserved"
+                    ? "Nenhuma mesa reservada no momento"
                     : "Nenhuma mesa encontrada com os filtros selecionados"}
                 </p>
                 <p className="text-xs text-zinc-400 mt-1">
                   {tables.length === 0
                     ? "Clique no botão '+ Nova mesa' acima para cadastrar a primeira mesa do salão."
+                    : activePill === "reserved"
+                    ? "Você pode agendar uma nova reserva e guardar uma mesa livre para um cliente."
                     : "Tente alterar os termos da busca ou mudar os filtros de status."}
                 </p>
+                {activePill === "reserved" && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const free = displayTables.find((t) => t.status === "free");
+                      if (free) setReserveTableNumber(free.tableNumber);
+                      setIsReservationModalOpen(true);
+                    }}
+                    className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#610000] hover:bg-[#7a0000] text-white font-bold text-xs shadow-xs transition-colors cursor-pointer"
+                  >
+                    <span>+ Nova Reserva</span>
+                  </button>
+                )}
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -1250,6 +1303,7 @@ export function TablesPage() {
                       if (t.status === "occupied") borderClass = "border-l-4 border-rose-500";
                       else if (t.status === "waiting") borderClass = "border-l-4 border-amber-500";
                       else if (t.status === "locked") borderClass = "border-l-4 border-zinc-400";
+                      else if (t.status === "reserved") borderClass = "border-l-4 border-purple-500";
 
                       return (
                         <tr
@@ -1321,6 +1375,23 @@ export function TablesPage() {
                                 <span>Bloqueada</span>
                               </span>
                             )}
+                            {t.status === "reserved" && (
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300 border border-purple-200 dark:border-purple-800/60 shadow-2xs">
+                                <svg
+                                  className="w-3.5 h-3.5"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                >
+                                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                                  <line x1="16" y1="2" x2="16" y2="6" />
+                                  <line x1="8" y1="2" x2="8" y2="6" />
+                                  <line x1="3" y1="10" x2="21" y2="10" />
+                                </svg>
+                                <span>Reservada</span>
+                              </span>
+                            )}
                           </td>
 
                           {/* CLIENTE */}
@@ -1365,7 +1436,7 @@ export function TablesPage() {
                           {/* AÇÕES */}
                           <td className="py-4 px-5 align-middle text-right">
                             <div className="relative inline-flex items-center justify-end gap-1.5">
-                              {/* Botão Contextual: Ver pedido ou Abrir mesa */}
+                              {/* Botão Contextual: Ver pedido, Acomodar cliente ou Abrir mesa */}
                               {t.status === "occupied" || t.status === "waiting" ? (
                                 <button
                                   type="button"
@@ -1376,6 +1447,23 @@ export function TablesPage() {
                                   className="px-3 py-1.5 rounded-xl border border-zinc-200/80 dark:border-zinc-700 bg-white hover:bg-zinc-50 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-xs font-semibold text-zinc-700 dark:text-zinc-200 shadow-2xs transition-colors whitespace-nowrap cursor-pointer"
                                 >
                                   Ver pedido
+                                </button>
+                              ) : t.status === "reserved" ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const res = reservations.find((r) => r.tableNumber === t.tableNumber);
+                                    if (res) {
+                                      void handleSeatReservation(res);
+                                    } else {
+                                      setOpenTableNumber(t.tableNumber);
+                                      setIsOpenTableModalOpen(true);
+                                    }
+                                  }}
+                                  className="px-3 py-1.5 rounded-xl border border-purple-300 bg-purple-600 hover:bg-purple-700 text-xs font-bold text-white shadow-2xs transition-colors whitespace-nowrap cursor-pointer"
+                                  title="Acomodar cliente e abrir atendimento"
+                                >
+                                  Acomodar cliente
                                 </button>
                               ) : (
                                 <button
@@ -1487,6 +1575,61 @@ export function TablesPage() {
                                       <span>🧹</span>
                                       <span>Liberar / Limpar</span>
                                     </button>
+                                  )}
+
+                                  {t.status === "free" && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setOpenMenuTableId(null);
+                                        setReserveTableNumber(t.tableNumber);
+                                        setIsReservationModalOpen(true);
+                                      }}
+                                      className="w-full px-3.5 py-2 text-xs font-semibold text-purple-700 hover:bg-purple-50 dark:text-purple-300 dark:hover:bg-purple-950/40 flex items-center gap-2 cursor-pointer"
+                                    >
+                                      <span>📅</span>
+                                      <span>Reservar mesa</span>
+                                    </button>
+                                  )}
+
+                                  {t.status === "reserved" && (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setOpenMenuTableId(null);
+                                          const res = reservations.find((r) => r.tableNumber === t.tableNumber);
+                                          if (res) void handleSeatReservation(res);
+                                        }}
+                                        className="w-full px-3.5 py-2 text-xs font-semibold text-emerald-600 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950/40 flex items-center gap-2 cursor-pointer"
+                                      >
+                                        <span>👤</span>
+                                        <span>Acomodar cliente</span>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setOpenMenuTableId(null);
+                                          setIsReservationModalOpen(true);
+                                        }}
+                                        className="w-full px-3.5 py-2 text-xs font-semibold text-purple-700 hover:bg-purple-50 dark:text-purple-300 dark:hover:bg-purple-950/40 flex items-center gap-2 cursor-pointer"
+                                      >
+                                        <span>📋</span>
+                                        <span>Ver reservas</span>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setOpenMenuTableId(null);
+                                          const res = reservations.find((r) => r.tableNumber === t.tableNumber);
+                                          if (res) handleCancelReservation(res.id);
+                                        }}
+                                        className="w-full px-3.5 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40 flex items-center gap-2 cursor-pointer"
+                                      >
+                                        <span>❌</span>
+                                        <span>Cancelar reserva</span>
+                                      </button>
+                                    </>
                                   )}
 
                                   <div className="my-1 border-t border-zinc-100 dark:border-zinc-800" />

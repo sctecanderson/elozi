@@ -18,31 +18,20 @@ export function AdminLayout() {
   const { restaurant: r } = useRestaurant();
   const navigate = useNavigate();
   const location = useLocation();
-  const { theme, setTheme } = useTheme();
+  const { theme } = useTheme();
   const [isPlatformAdmin, setIsPlatformAdmin] = useState(false);
   const [restaurantMenuOpen, setRestaurantMenuOpen] = useState(false);
   const restaurantMenuRef = useRef<HTMLDivElement>(null);
 
-  // Define o modo claro como padrão no Admin ao carregar, a menos que haja preferência explícita
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem('elozi_admin_theme_preference');
-      if (saved === 'dark' || saved === 'light') {
-        setTheme(saved);
-      } else {
-        setTheme('light');
-      }
-    } catch {
-      setTheme('light');
-    }
-  }, [setTheme]);
+  const isFinanceRoute = location.pathname.includes('/financeiro') || location.pathname.includes('/fechamento');
+  const isFechamentoActive = location.search.includes('tab=fechamento') || location.pathname.includes('/fechamento');
+  const [financeExpanded, setFinanceExpanded] = useState(isFinanceRoute);
 
-  // Salva preferência ao mudar de tema no Admin
   useEffect(() => {
-    try {
-      localStorage.setItem('elozi_admin_theme_preference', theme);
-    } catch {}
-  }, [theme]);
+    if (isFinanceRoute) {
+      setFinanceExpanded(true);
+    }
+  }, [isFinanceRoute]);
 
   const isDark = theme === 'dark';
 
@@ -89,8 +78,8 @@ export function AdminLayout() {
     ["mesas", "Mesas e comandas", "table"],
     ["financeiro", "Financeiro / Caixa", "chart"],
     ["assinatura", "Assinatura & Planos", "card"],
-    ["identidade", "Identidade visual", "settings"],
-    ["midias", "Armazenamento", "media"],
+    ["identidade", "Identidade visual", "brush"],
+    ["midias", "Armazenamento", "cloud"],
     ["equipe", "Equipe e acessos", "user"],
   ] as const;
 
@@ -173,37 +162,124 @@ export function AdminLayout() {
 
         {/* Itens de Navegação */}
         <nav aria-label="Administração" className="flex flex-col gap-1.5 flex-1">
-          {links.map(([path, label, icon]) => (
-            <NavLink
-              end
-              key={path}
-              to={`/${r.slug}/admin${path ? `/${path}` : ""}`}
-              title={label}
-              className={({ isActive }) =>
-                `flex items-center gap-3 min-h-[42px] px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all ${
-                  isActive
-                    ? isDark
-                      ? '!bg-zinc-800 !text-white !font-bold shadow-xs !shadow-none [&>svg]:!text-white'
-                      : '!bg-white !text-[#610000] !font-bold shadow-sm !shadow-none [&>svg]:!text-[#610000]'
-                    : isDark
-                      ? '!text-zinc-400 hover:!text-white hover:!bg-zinc-800/60 [&>svg]:!text-zinc-400 hover:[&>svg]:!text-white'
-                      : '!text-white/85 hover:!text-white hover:!bg-white/10 [&>svg]:!text-white/85 hover:[&>svg]:!text-white'
-                }`
-              }
-            >
-              {({ isActive }) => (
-                <>
-                  <AdminIcon
-                    name={icon}
-                    style={{
-                      color: isActive ? (!isDark ? '#610000' : '#ffffff') : (isDark ? '#a1a1aa' : 'rgba(255,255,255,0.85)'),
-                    }}
-                  />
-                  <span className="truncate">{label}</span>
-                </>
-              )}
-            </NavLink>
-          ))}
+          {links.map(([path, label, icon]) => {
+            if (path === "financeiro") {
+              const isMainFinanceActive = isFinanceRoute && !isFechamentoActive;
+              return (
+                <div key={path} className="flex flex-col gap-1">
+                  <div className="flex items-center">
+                    <NavLink
+                      end
+                      to={`/${r.slug}/admin/financeiro`}
+                      title={label}
+                      onClick={() => setFinanceExpanded(true)}
+                      className={
+                        `flex items-center gap-3 min-h-[42px] px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all flex-1 ${
+                          isMainFinanceActive
+                            ? isDark
+                              ? '!bg-zinc-800 !text-white !font-bold shadow-xs !shadow-none [&>svg]:!text-white'
+                              : '!bg-white !text-[#610000] !font-bold shadow-sm !shadow-none [&>svg]:!text-[#610000]'
+                            : isDark
+                              ? '!text-zinc-400 hover:!text-white hover:!bg-zinc-800/60 [&>svg]:!text-zinc-400 hover:[&>svg]:!text-white'
+                              : '!text-white/85 hover:!text-white hover:!bg-white/10 [&>svg]:!text-white/85 hover:[&>svg]:!text-white'
+                        }`
+                      }
+                    >
+                      <AdminIcon
+                        name={icon}
+                        style={{
+                          color: isMainFinanceActive
+                            ? (!isDark ? '#610000' : '#ffffff')
+                            : (isDark ? '#a1a1aa' : 'rgba(255,255,255,0.85)'),
+                        }}
+                      />
+                      <span className="truncate flex-1">{label}</span>
+                      {!sidebarCollapsed && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setFinanceExpanded((prev) => !prev);
+                          }}
+                          className="p-1 rounded-md hover:bg-black/10 dark:hover:bg-white/10 text-current transition-transform cursor-pointer"
+                          aria-label={financeExpanded ? "Recolher opções" : "Expandir opções"}
+                        >
+                          <svg
+                            className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                              financeExpanded ? "rotate-180" : ""
+                            }`}
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2.5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <polyline points="6 9 12 15 18 9" />
+                          </svg>
+                        </button>
+                      )}
+                    </NavLink>
+                  </div>
+
+                  {/* Sub-guia única adicional: + Fechamento de caixa */}
+                  {financeExpanded && !sidebarCollapsed && (
+                    <NavLink
+                      to={`/${r.slug}/admin/financeiro?tab=fechamento`}
+                      title="Fechamento de caixa"
+                      className={
+                        `flex items-center gap-2 py-2 pr-3 pl-10 rounded-xl text-xs font-semibold transition-all ${
+                          isFechamentoActive
+                            ? isDark
+                              ? '!bg-zinc-800 !text-white !font-bold shadow-xs'
+                              : '!bg-white !text-[#610000] !font-bold shadow-sm'
+                            : isDark
+                              ? '!text-zinc-400 hover:!text-white hover:!bg-zinc-800/50'
+                              : '!text-white/80 hover:!text-white hover:!bg-white/10'
+                        }`
+                      }
+                    >
+                      <span className="text-[13px] font-bold leading-none">+</span>
+                      <span className="truncate">Fechamento de caixa</span>
+                    </NavLink>
+                  )}
+                </div>
+              );
+            }
+
+            return (
+              <NavLink
+                end
+                key={path}
+                to={`/${r.slug}/admin${path ? `/${path}` : ""}`}
+                title={label}
+                className={({ isActive }) =>
+                  `flex items-center gap-3 min-h-[42px] px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                    isActive
+                      ? isDark
+                        ? '!bg-zinc-800 !text-white !font-bold shadow-xs !shadow-none [&>svg]:!text-white'
+                        : '!bg-white !text-[#610000] !font-bold shadow-sm !shadow-none [&>svg]:!text-[#610000]'
+                      : isDark
+                        ? '!text-zinc-400 hover:!text-white hover:!bg-zinc-800/60 [&>svg]:!text-zinc-400 hover:[&>svg]:!text-white'
+                        : '!text-white/85 hover:!text-white hover:!bg-white/10 [&>svg]:!text-white/85 hover:[&>svg]:!text-white'
+                  }`
+                }
+              >
+                {({ isActive }) => (
+                  <>
+                    <AdminIcon
+                      name={icon}
+                      style={{
+                        color: isActive ? (!isDark ? '#610000' : '#ffffff') : (isDark ? '#a1a1aa' : 'rgba(255,255,255,0.85)'),
+                      }}
+                    />
+                    <span className="truncate">{label}</span>
+                  </>
+                )}
+              </NavLink>
+            );
+          })}
         </nav>
 
         {/* Rodapé da Sidebar: Novo Card do Restaurante */}
@@ -459,9 +535,11 @@ export function AdminIcon({
     menu: "M5 3h14v18H5ZM8 7h8M8 11h8M8 15h5",
     chat: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z",
     table: "M3 9h18v4H3ZM5 13l-2 8M19 13l2 8M5 9V5h14v4",
-    kds: "M12 2c1.5 3 4 5 4 8a6 6 0 1 1-12 0c0-3 2.5-5 4-8 1 2 2 3 4 0z",
+    kds: "M6 13.8a4.5 4.5 0 1 1 8.8-1.2 4 4 0 1 1 5.2 5.2H4a4 4 0 0 1 2-4z M6 18h12v3H6z",
     settings:
       "M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8ZM12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2",
+    brush: "m18.37 2.63 3 3L13 14l-4 1 1-4 8.37-8.37z M9 15c-3 1-6 4-7 7 3-1 6-4 7-7z",
+    cloud: "M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z",
     media: "M3 3h18v18H3ZM3 17l6-7 5 6 3-3 4 5M16 7h1",
     user: "M12 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8ZM4 21v-3a8 8 0 0 1 16 0v3Z",
     bell: "M5 17h14l-2-3V9a5 5 0 0 0-10 0v5ZM10 21h4",

@@ -1,4 +1,12 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react';
 
 export type ThemeMode = 'light' | 'dark';
 
@@ -8,19 +16,22 @@ interface ThemeContextValue {
   setTheme: (mode: ThemeMode) => void;
 }
 
-const THEME_STORAGE_KEY = 'elozi_public_theme_preference';
+const THEME_STORAGE_KEY = 'theme';
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 function getInitialTheme(): ThemeMode {
   if (typeof window === 'undefined') return 'light';
   try {
-    const saved = window.localStorage.getItem(THEME_STORAGE_KEY);
+    const saved =
+      localStorage.getItem('theme') ||
+      localStorage.getItem('elozi_admin_theme_preference') ||
+      localStorage.getItem('elozi_public_theme_preference');
     if (saved === 'dark' || saved === 'light') {
       return saved;
     }
   } catch {
-    // Falha silenciosa de acesso ao localStorage (ex: iframe sandboxed ou storage bloqueado)
+    // Falha silenciosa de leitura no localStorage
   }
   return 'light';
 }
@@ -28,31 +39,42 @@ function getInitialTheme(): ThemeMode {
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<ThemeMode>(getInitialTheme);
 
+  // Efeito determinístico e seguro para aplicar a classe dark no HTML e persistir
   useEffect(() => {
-    try {
-      window.localStorage.setItem(THEME_STORAGE_KEY, theme);
-    } catch {
-      // Ignora falhas de gravação em storage restrito
+    const root = document.documentElement;
+    if (theme === 'dark') {
+      root.classList.add('dark');
+    } else {
+      root.classList.remove('dark');
     }
-    if (typeof document !== 'undefined') {
-      document.documentElement.setAttribute('data-theme', theme);
-      document.documentElement.classList.toggle('dark', theme === 'dark');
+    root.setAttribute('data-theme', theme);
+    try {
+      localStorage.setItem('theme', theme);
+      localStorage.setItem('elozi_admin_theme_preference', theme);
+      localStorage.setItem('elozi_public_theme_preference', theme);
+    } catch {
+      // Ignora falhas de escrita em storage restrito
     }
   }, [theme]);
 
-  const toggleTheme = () => {
+  const toggleTheme = useCallback(() => {
     setThemeState((prev) => (prev === 'light' ? 'dark' : 'light'));
-  };
+  }, []);
 
-  const setTheme = (mode: ThemeMode) => {
+  const setTheme = useCallback((mode: ThemeMode) => {
     setThemeState(mode);
-  };
+  }, []);
 
-  return (
-    <ThemeContext.Provider value={{ theme, toggleTheme, setTheme }}>
-      {children}
-    </ThemeContext.Provider>
+  const value = useMemo(
+    () => ({
+      theme,
+      toggleTheme,
+      setTheme,
+    }),
+    [theme, toggleTheme, setTheme]
   );
+
+  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
 
 export function useTheme(): ThemeContextValue {

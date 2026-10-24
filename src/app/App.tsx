@@ -457,6 +457,7 @@ export function App() {
               <Route path="comentarios" element={<AdminCommentsPage />} />
               <Route path="assinatura" element={<SubscriptionBillingPage />} />
               <Route path="financeiro" element={<FinancialReportPage />} />
+              <Route path="fechamento-caixa" element={<FinancialReportPage />} />
               <Route path="identidade" element={<IdentityPage />} />
               <Route path="mesas" element={<TablesPage />} />
               <Route path="midias" element={<MediaMaintenancePage />} />

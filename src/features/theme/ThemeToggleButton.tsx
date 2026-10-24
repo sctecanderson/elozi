@@ -1,3 +1,4 @@
+import React from 'react';
 import { useTheme } from './ThemeContext';
 
 export function ThemeToggleButton({ className = '' }: { className?: string }) {
@@ -5,10 +6,16 @@ export function ThemeToggleButton({ className = '' }: { className?: string }) {
   const isDark = theme === 'dark';
   const label = isDark ? 'Ativar tema claro' : 'Ativar tema escuro';
 
+  const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    toggleTheme();
+  };
+
   return (
     <button
       type="button"
-      onClick={toggleTheme}
+      onClick={handleClick}
       className={`public-theme-toggle-btn ${className}`.trim()}
       aria-label={label}
       title={label}
